@@ -9,8 +9,9 @@ Standalone specification for the GitHub (Version Control) connector. Uses the un
 
 - [Overview](#overview)
 - [Bronze Tables](#bronze-tables)
-  - [Unified Git Tables](#unified-git-tables)
   - [`github_graphql_cache` — Optional GraphQL query cache](#github_graphql_cache-optional-graphql-query-cache)
+- [Silver Tables](#silver-tables)
+  - [Unified Git Tables](#unified-git-tables)
 - [API Details](#api-details)
   - [Base Configuration](#base-configuration)
   - [Authentication](#authentication)
@@ -57,7 +58,7 @@ Standalone specification for the GitHub (Version Control) connector. Uses the un
 **Why unified schema**: GitHub data is stored in the same `git_*` tables as Bitbucket and GitLab (defined in `docs/connectors/git/README.md`), using `data_source = "insight_github"` as the discriminator. This enables:
 - Cross-platform analytics (e.g., "show all commits across GitHub and Bitbucket")
 - Consistent identity resolution across git platforms
-- Simplified Silver/Gold layer transformations
+- Simplified Gold layer transformations
 - Deduplication when repositories are mirrored
 
 **GraphQL Advantages**: GitHub's GraphQL API v4 provides:
@@ -71,35 +72,6 @@ Standalone specification for the GitHub (Version Control) connector. Uses the un
 ---
 
 ## Bronze Tables
-
-### Unified Git Tables
-
-GitHub data is stored in the following unified tables from `docs/connectors/git/README.md`:
-
-| Table | Purpose | GitHub Usage |
-|-------|---------|--------------|
-| `git_repositories` | Repository metadata | Stores repos with `data_source = "insight_github"` |
-| `git_repositories_ext` | Extended repo properties | Optional: stores GitHub-specific metrics (stars, forks, watchers, etc.) |
-| `git_repository_branches` | Branch tracking for incremental sync | Tracks last collected commit per branch |
-| `git_commits` | Commit history | Stores commits from all branches |
-| `git_commits_ext` | Extended commit properties | Optional: stores AI analysis, license scanning results |
-| `git_commit_files` | Per-file line changes | Parsed from commit diff data |
-| `git_pull_requests` | PR metadata and lifecycle | Maps GitHub PRs with state normalization |
-| `git_pull_requests_ext` | Extended PR properties | Optional: stores review metrics, cycle time calculations |
-| `git_pull_requests_reviewers` | Review submissions | Maps GitHub reviewers from review events |
-| `git_pull_requests_comments` | PR comments (general + inline) | Combines review comments and issue comments |
-| `git_pull_requests_commits` | PR-to-commit junction table | Links PRs to their commits |
-| `git_tickets` | Ticket references (Jira, etc.) | Extracts ticket keys from PR titles/descriptions and commit messages |
-| `git_collection_runs` | Connector execution log | Tracks ETL run statistics and status |
-
-**Reference**: See `docs/connectors/git/README.md` for complete table schemas, indexes, and field descriptions.
-
-**Key mapping differences**:
-- GitHub's `owner` + `repo_name` → `git_repositories.project_key` + `git_repositories.repo_slug`
-- GitHub's `login` → stored in `author_name` fields
-- GitHub's `databaseId` → stored in `pr_id` and `author_uuid` fields
-
----
 
 ### `github_graphql_cache` — Optional GraphQL query cache
 
@@ -170,6 +142,37 @@ INSERT INTO github_graphql_cache (
 4. **Manual**: Periodic cache clearing for stale data
 
 **Note**: This table is GitHub-specific and optional. Bitbucket connector may use different caching strategy (REST API response caching). The unified `git_*` tables do not require caching.
+
+---
+
+## Silver Tables
+
+### Unified Git Tables
+
+GitHub data is stored in the following unified Silver tables from `docs/connectors/git/README.md`:
+
+| Table | Purpose | GitHub Usage |
+|-------|---------|--------------|
+| `git_repositories` | Repository metadata | Stores repos with `data_source = "insight_github"` |
+| `git_repositories_ext` | Extended repo properties | Optional: stores GitHub-specific metrics (stars, forks, watchers, etc.) |
+| `git_repository_branches` | Branch tracking for incremental sync | Tracks last collected commit per branch |
+| `git_commits` | Commit history | Stores commits from all branches |
+| `git_commits_ext` | Extended commit properties | Optional: stores AI analysis, license scanning results |
+| `git_commit_files` | Per-file line changes | Parsed from commit diff data |
+| `git_pull_requests` | PR metadata and lifecycle | Maps GitHub PRs with state normalization |
+| `git_pull_requests_ext` | Extended PR properties | Optional: stores review metrics, cycle time calculations |
+| `git_pull_requests_reviewers` | Review submissions | Maps GitHub reviewers from review events |
+| `git_pull_requests_comments` | PR comments (general + inline) | Combines review comments and issue comments |
+| `git_pull_requests_commits` | PR-to-commit junction table | Links PRs to their commits |
+| `git_tickets` | Ticket references (Jira, etc.) | Extracts ticket keys from PR titles/descriptions and commit messages |
+| `git_collection_runs` | Connector execution log | Tracks ETL run statistics and status |
+
+**Reference**: See `docs/connectors/git/README.md` for complete table schemas, indexes, and field descriptions.
+
+**Key mapping differences**:
+- GitHub's `owner` + `repo_name` → `git_repositories.project_key` + `git_repositories.repo_slug`
+- GitHub's `login` → stored in `author_name` fields
+- GitHub's `databaseId` → stored in `pr_id` and `author_uuid` fields
 
 ---
 
@@ -1191,7 +1194,7 @@ GitHub has 4 review states (`APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`, `DISMI
 2. **Normalize to binary** — map `APPROVED` → 1, all others → 0
 3. **Add source-specific mapping** — create lookup table for state normalization
 
-**Current approach**: Preserve as-is, normalize in Silver/Gold layers based on analytics requirements
+**Current approach**: Preserve as-is, normalize in Gold layers based on analytics requirements
 
 **Consideration**: Different platforms have different review semantics; preserving raw data provides most flexibility
 

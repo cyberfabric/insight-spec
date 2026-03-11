@@ -9,8 +9,9 @@ Standalone specification for the Bitbucket Server/Data Center (Version Control) 
 
 - [Overview](#overview)
 - [Bronze Tables](#bronze-tables)
-  - [Unified Git Tables](#unified-git-tables)
   - [`bitbucket_api_cache` — Optional API response cache](#bitbucket_api_cache-optional-api-response-cache)
+- [Silver Tables](#silver-tables)
+  - [Unified Git Tables](#unified-git-tables)
 - [API Details](#api-details)
   - [Base Configuration](#base-configuration)
   - [Key Endpoints](#key-endpoints)
@@ -53,7 +54,7 @@ Standalone specification for the Bitbucket Server/Data Center (Version Control) 
 **Why unified schema**: Bitbucket data is stored in the same `git_*` tables as GitHub and GitLab (defined in `docs/connectors/git/README.md`), using `data_source = "insight_bitbucket_server"` as the discriminator. This enables:
 - Cross-platform analytics (e.g., "show all commits across GitHub and Bitbucket")
 - Consistent identity resolution across git platforms
-- Simplified Silver/Gold layer transformations
+- Simplified Gold layer transformations
 - Deduplication when repositories are mirrored
 
 > **Note**: Bitbucket Server's review model is simpler than GitHub's — reviewers can only `APPROVE` or `UNAPPROVE` (no `CHANGES_REQUESTED` or `COMMENTED` states). The unified schema accommodates both models via the `status` field normalization.
@@ -61,35 +62,6 @@ Standalone specification for the Bitbucket Server/Data Center (Version Control) 
 ---
 
 ## Bronze Tables
-
-### Unified Git Tables
-
-Bitbucket data is stored in the following unified tables from `docs/connectors/git/README.md`:
-
-| Table | Purpose | Bitbucket Usage |
-|-------|---------|-----------------|
-| `git_repositories` | Repository metadata | Stores projects and repos with `data_source = "insight_bitbucket_server"` |
-| `git_repositories_ext` | Extended repo properties | Optional: stores aggregated metrics (total LOC, contributor counts, etc.) |
-| `git_repository_branches` | Branch tracking for incremental sync | Tracks last collected commit per branch |
-| `git_commits` | Commit history | Stores commits from all branches |
-| `git_commits_ext` | Extended commit properties | Optional: stores AI analysis, license scanning results |
-| `git_commit_files` | Per-file line changes | Parsed from `/commits/{hash}/diff` endpoint |
-| `git_pull_requests` | PR metadata and lifecycle | Maps Bitbucket PRs with state normalization |
-| `git_pull_requests_ext` | Extended PR properties | Optional: stores review metrics, cycle time calculations |
-| `git_pull_requests_reviewers` | Review submissions | Maps Bitbucket reviewers from PR activities |
-| `git_pull_requests_comments` | PR comments (general + inline) | Combines comments from activities endpoint |
-| `git_pull_requests_commits` | PR-to-commit junction table | Links PRs to their commits |
-| `git_tickets` | Ticket references (Jira, etc.) | Extracts Jira keys from PR titles/descriptions and commit messages |
-| `git_collection_runs` | Connector execution log | Tracks ETL run statistics and status |
-
-**Reference**: See `docs/connectors/git/README.md` for complete table schemas, indexes, and field descriptions.
-
-**Key mapping differences**:
-- Bitbucket's `project.key` → `git_repositories.project_key`
-- Bitbucket's `repo.slug` → `git_repositories.repo_slug`
-- GitHub's `owner` + `repo_name` maps to same fields for consistency
-
----
 
 ### `bitbucket_api_cache` — Optional API response cache
 
@@ -157,6 +129,37 @@ INSERT INTO bitbucket_api_cache (
 4. **Conditional requests**: Use `etag`/`last_modified` for HTTP 304 Not Modified responses
 
 **Note**: This table is Bitbucket-specific and optional. GitHub connector may use different caching strategy (e.g., GraphQL query result caching). The unified `git_*` tables do not require caching.
+
+---
+
+## Silver Tables
+
+### Unified Git Tables
+
+Bitbucket data is stored in the following unified Silver tables from `docs/connectors/git/README.md`:
+
+| Table | Purpose | Bitbucket Usage |
+|-------|---------|-----------------|
+| `git_repositories` | Repository metadata | Stores projects and repos with `data_source = "insight_bitbucket_server"` |
+| `git_repositories_ext` | Extended repo properties | Optional: stores aggregated metrics (total LOC, contributor counts, etc.) |
+| `git_repository_branches` | Branch tracking for incremental sync | Tracks last collected commit per branch |
+| `git_commits` | Commit history | Stores commits from all branches |
+| `git_commits_ext` | Extended commit properties | Optional: stores AI analysis, license scanning results |
+| `git_commit_files` | Per-file line changes | Parsed from `/commits/{hash}/diff` endpoint |
+| `git_pull_requests` | PR metadata and lifecycle | Maps Bitbucket PRs with state normalization |
+| `git_pull_requests_ext` | Extended PR properties | Optional: stores review metrics, cycle time calculations |
+| `git_pull_requests_reviewers` | Review submissions | Maps Bitbucket reviewers from PR activities |
+| `git_pull_requests_comments` | PR comments (general + inline) | Combines comments from activities endpoint |
+| `git_pull_requests_commits` | PR-to-commit junction table | Links PRs to their commits |
+| `git_tickets` | Ticket references (Jira, etc.) | Extracts Jira keys from PR titles/descriptions and commit messages |
+| `git_collection_runs` | Connector execution log | Tracks ETL run statistics and status |
+
+**Reference**: See `docs/connectors/git/README.md` for complete table schemas, indexes, and field descriptions.
+
+**Key mapping differences**:
+- Bitbucket's `project.key` → `git_repositories.project_key`
+- Bitbucket's `repo.slug` → `git_repositories.repo_slug`
+- GitHub's `owner` + `repo_name` maps to same fields for consistency
 
 ---
 
@@ -653,9 +656,9 @@ Current schema only tracks **reviewers** in `git_pull_requests_reviewers`. Parti
 
 Bitbucket author names use dot-separated format (`John.Smith`) while GitHub uses various formats (`johndoe`, `John Doe`).
 
-**Question**: Should we normalize author names in Bronze layer or preserve as-is and normalize in Silver?
+**Question**: Should we normalize author names in Silver layer or preserve as-is and normalize in Gold?
 
-**Current approach**: Preserve as-is in Bronze, normalize in Silver identity resolution
+**Current approach**: Preserve as-is in Silver, normalize in Gold identity resolution
 
 **Consideration**: Dot-separated names may be corporate standard, normalizing could lose information
 
