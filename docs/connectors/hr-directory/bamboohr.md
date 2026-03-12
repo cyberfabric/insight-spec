@@ -12,6 +12,7 @@ Standalone specification for the BambooHR (HR) connector. Expands Source 10 in t
   - [`bamboohr_employees` — Employee records](#bamboohremployees-employee-records)
   - [`bamboohr_departments` — Department hierarchy](#bamboohrdepartments-department-hierarchy)
   - [`bamboohr_leave_requests` — Time off requests](#bamboohrleaverequests-time-off-requests)
+  - [`bamboohr_employee_ext` — Custom employee fields (key-value)](#bamboohr_employee_ext--custom-employee-fields-key-value)
   - [`bamboohr_collection_runs` — Connector execution log](#bamboohrcollectionruns-connector-execution-log)
 - [Identity Resolution](#identity-resolution)
 - [Silver / Gold Mappings](#silver-gold-mappings)
@@ -49,21 +50,21 @@ Standalone specification for the BambooHR (HR) connector. Expands Source 10 in t
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `employee_id` | text | BambooHR internal numeric ID |
-| `email` | text | Work email — primary key for cross-system identity resolution |
-| `full_name` | text | Display name |
-| `first_name` | text | First name |
-| `last_name` | text | Last name |
-| `department` | text | Department name |
-| `department_id` | text | Department ID — joins to `bamboohr_departments.department_id` |
-| `job_title` | text | Job title (freeform string — not normalised) |
-| `employment_type` | text | `Full-Time` / `Part-Time` / `Contractor` |
-| `status` | text | `Active` / `Terminated` |
-| `manager_id` | text | Manager's BambooHR employee ID |
-| `manager_email` | text | Manager's email — used to build org hierarchy |
-| `location` | text | Office location or `Remote` |
-| `hire_date` | date | Employment start date |
-| `termination_date` | date | Employment end date (NULL if active) |
+| `employee_id` | String | BambooHR internal numeric ID |
+| `email` | String | Work email — primary key for cross-system identity resolution |
+| `full_name` | String | Display name |
+| `first_name` | String | First name |
+| `last_name` | String | Last name |
+| `department` | String | Department name |
+| `department_id` | String | Department ID — joins to `bamboohr_departments.department_id` |
+| `job_title` | String | Job title (freeform string — not normalised) |
+| `employment_type` | String | `Full-Time` / `Part-Time` / `Contractor` |
+| `status` | String | `Active` / `Terminated` |
+| `manager_id` | String | Manager's BambooHR employee ID |
+| `manager_email` | String | Manager's email — used to build org hierarchy |
+| `location` | String | Office location or `Remote` |
+| `hire_date` | Date | Employment start date |
+| `termination_date` | Date | Employment end date (NULL if active) |
 
 Current-state only — no effective dating. The connector overwrites rows on each run; historical snapshots are not preserved at Bronze level.
 
@@ -73,9 +74,9 @@ Current-state only — no effective dating. The connector overwrites rows on eac
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `department_id` | text | BambooHR department ID — primary key |
-| `name` | text | Department name |
-| `parent_department_id` | text | Parent department ID (NULL for root) |
+| `department_id` | String | BambooHR department ID — primary key |
+| `name` | String | Department name |
+| `parent_department_id` | String | Parent department ID (NULL for root) |
 
 Enables hierarchical org traversal — a team can be nested under multiple layers of departments.
 
@@ -85,17 +86,36 @@ Enables hierarchical org traversal — a team can be nested under multiple layer
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `request_id` | text | BambooHR request ID — primary key |
-| `employee_id` | text | Employee's BambooHR ID — joins to `bamboohr_employees.employee_id` |
-| `employee_email` | text | Employee email |
-| `leave_type` | text | `Vacation` / `Sick` / `Parental` / `Unpaid` / etc. (freeform — client-configured) |
-| `start_date` | date | Leave start |
-| `end_date` | date | Leave end |
-| `duration_days` | numeric | Working days absent |
-| `status` | text | `approved` / `pending` / `cancelled` |
-| `created_at` | timestamptz | When the request was submitted |
+| `request_id` | String | BambooHR request ID — primary key |
+| `employee_id` | String | Employee's BambooHR ID — joins to `bamboohr_employees.employee_id` |
+| `employee_email` | String | Employee email |
+| `leave_type` | String | `Vacation` / `Sick` / `Parental` / `Unpaid` / etc. (freeform — client-configured) |
+| `start_date` | Date | Leave start |
+| `end_date` | Date | Leave end |
+| `duration_days` | Float64 | Working days absent |
+| `status` | String | `approved` / `pending` / `cancelled` |
+| `created_at` | DateTime64(3) | When the request was submitted |
 
 `leave_type` values are freeform and client-configured — normalisation across BambooHR and Workday requires a mapping layer at Silver or Gold.
+
+---
+
+### `bamboohr_employee_ext` — Custom employee fields (key-value)
+
+BambooHR returns all custom fields in the main employee response if included in the fields list when calling `GET /api/gateway.php/{company}/v1/employees/{id}`. Custom fields have IDs like `customField1`, `customField2`, etc. Any field not in the core `bamboohr_employees` schema is written here.
+
+**Note**: Unlike most other connectors, there is no separate Bronze `_ext` table required — BambooHR exposes custom fields inline in the main employee response. This table captures those fields in the standard key-value pattern for consistency. `class_people.custom_str_attrs` and `class_people.custom_num_attrs` are populated directly from these values at Silver processing time.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `employee_id` | String | Parent employee ID — joins to `bamboohr_employees.employee_id` |
+| `field_id` | String | BambooHR custom field ID, e.g. `customField1`, `customField5` |
+| `field_name` | String | Custom field display name (from field metadata API) |
+| `field_value` | String | Field value as string |
+| `value_type` | String | Type hint: `string` / `number` / `date` / `json` |
+| `collected_at` | DateTime64(3) | Collection timestamp |
+
+**Discovery**: `GET /api/gateway.php/{company}/v1/meta/fields` returns all available field IDs and their display names, including custom fields.
 
 ---
 
@@ -103,16 +123,16 @@ Enables hierarchical org traversal — a team can be nested under multiple layer
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `employees_collected` | numeric | Rows collected for `bamboohr_employees` |
-| `departments_collected` | numeric | Rows collected for `bamboohr_departments` |
-| `leave_requests_collected` | numeric | Rows collected for `bamboohr_leave_requests` |
-| `api_calls` | numeric | API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (subdomain, field selection, lookback) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `employees_collected` | Float64 | Rows collected for `bamboohr_employees` |
+| `departments_collected` | Float64 | Rows collected for `bamboohr_departments` |
+| `leave_requests_collected` | Float64 | Rows collected for `bamboohr_leave_requests` |
+| `api_calls` | Float64 | API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (subdomain, field selection, lookback) |
 
 Monitoring table — not an analytics source.
 
@@ -135,9 +155,9 @@ Monitoring table — not an analytics source.
 | `bamboohr_employees` | Identity Manager (email → `person_id`) | ✓ Feeds identity resolution directly |
 | `bamboohr_employees` | `class_people` | Planned — HR unified stream not yet defined |
 | `bamboohr_departments` | *(reference table)* | Available — no unified stream defined yet |
-| `bamboohr_leave_requests` | `class_leave` | Planned — leave unified stream not yet defined |
+| `bamboohr_leave_requests` | `class_people` | Leave periods captured as `status = 'on_leave'` transitions in SCD2 |
 
-**Gold**: Org hierarchy (team-level metric aggregation), leave analytics (burnout risk, availability), and headcount metrics will derive from a future HR Silver layer once `class_people` and `class_leave` streams are defined.
+**Gold**: Org hierarchy (team-level metric aggregation), leave analytics (burnout risk, availability), and headcount metrics will derive from a future HR Silver layer once `class_people` is defined.
 
 ---
 

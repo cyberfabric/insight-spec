@@ -51,20 +51,20 @@ Standalone specification for the LDAP / Active Directory (Directory) connector. 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `dn` | text | Distinguished name — unique identifier, e.g. `CN=John Smith,OU=Engineering,DC=corp,DC=example,DC=com` |
-| `sam_account_name` | text | Windows login name (Active Directory) / `uid` in OpenLDAP |
-| `email` | text | `mail` attribute — primary key for cross-system identity resolution |
-| `full_name` | text | `cn` (common name) |
-| `first_name` | text | `givenName` |
-| `last_name` | text | `sn` (surname) |
-| `department` | text | `department` attribute |
-| `title` | text | `title` attribute |
-| `manager_dn` | text | `manager` attribute — DN of the manager's LDAP record |
-| `ou` | text | Organizational unit path |
-| `account_disabled` | boolean | Whether the account is disabled |
-| `last_logon` | timestamptz | Last successful login (Active Directory only — not available in OpenLDAP) |
-| `created_at` | timestamptz | `whenCreated` — account provisioning date |
-| `updated_at` | timestamptz | `whenChanged` — last directory update |
+| `dn` | String | Distinguished name — unique identifier, e.g. `CN=John Smith,OU=Engineering,DC=corp,DC=example,DC=com` |
+| `sam_account_name` | String | Windows login name (Active Directory) / `uid` in OpenLDAP |
+| `email` | String | `mail` attribute — primary key for cross-system identity resolution |
+| `full_name` | String | `cn` (common name) |
+| `first_name` | String | `givenName` |
+| `last_name` | String | `sn` (surname) |
+| `department` | String | `department` attribute |
+| `title` | String | `title` attribute |
+| `manager_dn` | String | `manager` attribute — DN of the manager's LDAP record |
+| `ou` | String | Organizational unit path |
+| `account_disabled` | Bool | Whether the account is disabled |
+| `last_logon` | DateTime64(3) | Last successful login (Active Directory only — not available in OpenLDAP) |
+| `created_at` | DateTime64(3) | `whenCreated` — account provisioning date |
+| `updated_at` | DateTime64(3) | `whenChanged` — last directory update |
 
 ---
 
@@ -72,12 +72,12 @@ Standalone specification for the LDAP / Active Directory (Directory) connector. 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `group_dn` | text | Distinguished name of the group |
-| `group_name` | text | `cn` of the group |
-| `group_type` | text | `security` / `distribution` / `ou` |
-| `member_dn` | text | DN of the member (user or nested group) |
-| `member_email` | text | Resolved email of the member (NULL for nested groups) |
-| `is_nested_group` | boolean | True if `member_dn` is itself a group |
+| `group_dn` | String | Distinguished name of the group |
+| `group_name` | String | `cn` of the group |
+| `group_type` | String | `security` / `distribution` / `ou` |
+| `member_dn` | String | DN of the member (user or nested group) |
+| `member_email` | String | Resolved email of the member (NULL for nested groups) |
+| `is_nested_group` | Bool | True if `member_dn` is itself a group |
 
 Group membership is many-to-many. A user in `Engineering > Backend` appears in both the sub-group and all parent groups if the directory is structured hierarchically. `is_nested_group` allows downstream consumers to flatten the hierarchy.
 
@@ -87,15 +87,15 @@ Group membership is many-to-many. A user in `Engineering > Backend` appears in b
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `users_collected` | numeric | Rows collected for `ldap_users` |
-| `group_members_collected` | numeric | Rows collected for `ldap_group_members` |
-| `api_calls` | numeric | LDAP search operations performed |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (server URL, base DN, search filters) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `users_collected` | Float64 | Rows collected for `ldap_users` |
+| `group_members_collected` | Float64 | Rows collected for `ldap_group_members` |
+| `api_calls` | Float64 | LDAP search operations performed |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (server URL, base DN, search filters) |
 
 Monitoring table — not an analytics source.
 

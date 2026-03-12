@@ -12,6 +12,7 @@ Standalone specification for the Workday (HR) connector. Expands Source 11 in th
   - [`workday_workers` — Worker records (point-in-time)](#workdayworkers-worker-records-point-in-time)
   - [`workday_organizations` — Org units (departments, supervisory orgs, cost centers)](#workdayorganizations-org-units-departments-supervisory-orgs-cost-centers)
   - [`workday_leave` — Leave of absence and time off](#workdayleave-leave-of-absence-and-time-off)
+  - [`workday_worker_ext` — Custom worker fields (key-value)](#workday_worker_ext--custom-worker-fields-key-value)
   - [`workday_collection_runs` — Connector execution log](#workdaycollectionruns-connector-execution-log)
 - [Identity Resolution](#identity-resolution)
 - [Silver / Gold Mappings](#silver-gold-mappings)
@@ -57,27 +58,27 @@ Standalone specification for the Workday (HR) connector. Expands Source 11 in th
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `worker_id` | text | Workday internal worker ID |
-| `email` | text | Work email — primary key for cross-system identity resolution |
-| `full_name` | text | Display name |
-| `first_name` | text | First name |
-| `last_name` | text | Last name |
-| `worker_type` | text | `Employee` / `Contingent_Worker` |
-| `employment_status` | text | `Active` / `Terminated` / `Leave` |
-| `job_title` | text | Business title |
-| `job_profile` | text | Standardized job profile name |
-| `position_id` | text | Position (job slot) identifier |
-| `supervisory_org_id` | text | Supervisory organization ID — defines the reporting chain; joins to `workday_organizations.org_id` |
-| `supervisory_org_name` | text | Supervisory organization name |
-| `department` | text | Department name |
-| `cost_center_id` | text | Cost center ID |
-| `cost_center_name` | text | Cost center name |
-| `manager_id` | text | Manager's Workday worker ID |
-| `manager_email` | text | Manager's email |
-| `location` | text | Office or `Remote` |
-| `hire_date` | date | Employment start date |
-| `termination_date` | date | Employment end date (NULL if active) |
-| `effective_date` | date | Date from which this record version is valid |
+| `worker_id` | String | Workday internal worker ID |
+| `email` | String | Work email — primary key for cross-system identity resolution |
+| `full_name` | String | Display name |
+| `first_name` | String | First name |
+| `last_name` | String | Last name |
+| `worker_type` | String | `Employee` / `Contingent_Worker` |
+| `employment_status` | String | `Active` / `Terminated` / `Leave` |
+| `job_title` | String | Business title |
+| `job_profile` | String | Standardized job profile name |
+| `position_id` | String | Position (job slot) identifier |
+| `supervisory_org_id` | String | Supervisory organization ID — defines the reporting chain; joins to `workday_organizations.org_id` |
+| `supervisory_org_name` | String | Supervisory organization name |
+| `department` | String | Department name |
+| `cost_center_id` | String | Cost center ID |
+| `cost_center_name` | String | Cost center name |
+| `manager_id` | String | Manager's Workday worker ID |
+| `manager_email` | String | Manager's email |
+| `location` | String | Office or `Remote` |
+| `hire_date` | Date | Employment start date |
+| `termination_date` | Date | Employment end date (NULL if active) |
+| `effective_date` | Date | Date from which this record version is valid |
 
 `effective_date` makes this a point-in-time snapshot. Multiple rows per worker are expected — each org change produces a new versioned row.
 
@@ -87,12 +88,12 @@ Standalone specification for the Workday (HR) connector. Expands Source 11 in th
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `org_id` | text | Workday org unit ID — primary key |
-| `org_type` | text | `Supervisory` / `Department` / `CostCenter` / `Company` |
-| `name` | text | Org unit name |
-| `parent_org_id` | text | Parent org unit ID (NULL for root) |
-| `head_worker_id` | text | Org head's Workday worker ID |
-| `effective_date` | date | Date from which this org version is valid |
+| `org_id` | String | Workday org unit ID — primary key |
+| `org_type` | String | `Supervisory` / `Department` / `CostCenter` / `Company` |
+| `name` | String | Org unit name |
+| `parent_org_id` | String | Parent org unit ID (NULL for root) |
+| `head_worker_id` | String | Org head's Workday worker ID |
+| `effective_date` | Date | Date from which this org version is valid |
 
 Org units are also effective-dated — a department rename or restructure produces a new versioned row.
 
@@ -102,18 +103,37 @@ Org units are also effective-dated — a department rename or restructure produc
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `leave_id` | text | Workday leave request ID — primary key |
-| `worker_id` | text | Worker's Workday ID — joins to `workday_workers.worker_id` |
-| `worker_email` | text | Worker email |
-| `leave_category` | text | `Leave_of_Absence` / `Time_Off` |
-| `leave_type` | text | e.g. `Vacation`, `Sick`, `Parental`, `FMLA` (policy-defined) |
-| `start_date` | date | Leave start |
-| `end_date` | date | Leave end |
-| `duration_days` | numeric | Working days absent |
-| `status` | text | `Approved` / `Pending` / `Cancelled` |
-| `created_at` | timestamptz | When the request was submitted |
+| `leave_id` | String | Workday leave request ID — primary key |
+| `worker_id` | String | Worker's Workday ID — joins to `workday_workers.worker_id` |
+| `worker_email` | String | Worker email |
+| `leave_category` | String | `Leave_of_Absence` / `Time_Off` |
+| `leave_type` | String | e.g. `Vacation`, `Sick`, `Parental`, `FMLA` (policy-defined) |
+| `start_date` | Date | Leave start |
+| `end_date` | Date | Leave end |
+| `duration_days` | Float64 | Working days absent |
+| `status` | String | `Approved` / `Pending` / `Cancelled` |
+| `created_at` | DateTime64(3) | When the request was submitted |
 
 `leave_category` is Workday-specific (high-level), while `leave_type` is policy-defined and client-specific.
+
+---
+
+### `workday_worker_ext` — Custom worker fields (key-value)
+
+Workday workers support custom integration fields via custom reports (RaaS — Reports-as-a-Service) or integration system fields. Any field not in the core `workday_workers` schema — including custom integration attributes and calculated fields from custom reports — is written here.
+
+**Note**: Like BambooHR, Workday exposes custom fields inline in the worker response (or via a custom RaaS report that includes extra columns). This table captures those fields in the standard key-value pattern. `class_people.custom_str_attrs` and `class_people.custom_num_attrs` are populated from these values at Silver processing time.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `employee_id` | String | Parent worker ID — joins to `workday_workers.worker_id` |
+| `field_id` | String | Workday field or report column ID, e.g. `Custom_Attribute_1` |
+| `field_name` | String | Field display name (from RaaS report column header or field metadata) |
+| `field_value` | String | Field value as string |
+| `value_type` | String | Type hint: `string` / `number` / `date` / `json` |
+| `collected_at` | DateTime64(3) | Collection timestamp |
+
+**Discovery**: custom fields are defined in the Workday RaaS report configuration or Integration System configuration. The connector administrator must declare which custom report columns to collect via the connector configuration.
 
 ---
 
@@ -121,16 +141,16 @@ Org units are also effective-dated — a department rename or restructure produc
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `workers_collected` | numeric | Rows collected for `workday_workers` |
-| `organizations_collected` | numeric | Rows collected for `workday_organizations` |
-| `leave_records_collected` | numeric | Rows collected for `workday_leave` |
-| `api_calls` | numeric | API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (tenant, RaaS report URLs, lookback) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `workers_collected` | Float64 | Rows collected for `workday_workers` |
+| `organizations_collected` | Float64 | Rows collected for `workday_organizations` |
+| `leave_records_collected` | Float64 | Rows collected for `workday_leave` |
+| `api_calls` | Float64 | API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (tenant, RaaS report URLs, lookback) |
 
 Monitoring table — not an analytics source.
 
@@ -153,7 +173,7 @@ Monitoring table — not an analytics source.
 | `workday_workers` | Identity Manager (email → `person_id`) | ✓ Feeds identity resolution directly |
 | `workday_workers` | `class_people` | Planned — HR unified stream not yet defined |
 | `workday_organizations` | *(reference table)* | Available — no unified stream defined yet |
-| `workday_leave` | `class_leave` | Planned — leave unified stream not yet defined |
+| `workday_leave` | `class_people` | Leave periods captured as `status = 'on_leave'` transitions in SCD2 |
 
 **Gold**: Historical org structure (team composition over time), leave analytics (burnout risk, availability), and headcount metrics. Effective dating in `workday_workers` enables point-in-time queries — "what was the team composition in Q3 2025?" — which is not possible with BambooHR.
 
