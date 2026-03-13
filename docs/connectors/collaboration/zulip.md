@@ -46,13 +46,13 @@ Standalone specification for the Zulip (Chat) connector. Expands Source 7 in the
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | bigint | Zulip user ID — primary key |
-| `email` | text | Email — identity key for cross-system resolution |
-| `full_name` | text | Display name |
-| `role` | numeric | 100 owner / 200 admin / 400 member / 600 guest |
-| `is_active` | boolean | Whether account is active |
-| `uuid` | text | Universally unique identifier |
-| `recipient_id` | bigint | Internal Zulip recipient ID — present in stream spec (`streams/raw_zulip/zulip_users.md`) but absent from main Reference; see OQ-ZUL-1 |
+| `id` | Int64 | Zulip user ID — primary key |
+| `email` | String | Email — identity key for cross-system resolution |
+| `full_name` | String | Display name |
+| `role` | Float64 | 100 owner / 200 admin / 400 member / 600 guest |
+| `is_active` | Bool | Whether account is active |
+| `uuid` | String | Universally unique identifier |
+| `recipient_id` | Int64 | Internal Zulip recipient ID — present in stream spec (`streams/raw_zulip/zulip_users.md`) but absent from main Reference; see OQ-ZUL-1 |
 
 ---
 
@@ -60,10 +60,10 @@ Standalone specification for the Zulip (Chat) connector. Expands Source 7 in the
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `uniq` | text | Primary key — present in stream spec (`streams/raw_zulip/zulip_messages.md`) but absent from main Reference; see OQ-ZUL-1 |
-| `sender_id` | bigint | Sender's Zulip user ID — joins to `zulip_users.id` |
-| `count` | numeric | Number of messages in this record |
-| `created_at` | timestamptz | Message timestamp / aggregation period |
+| `uniq` | String | Primary key — present in stream spec (`streams/raw_zulip/zulip_messages.md`) but absent from main Reference; see OQ-ZUL-1 |
+| `sender_id` | Int64 | Sender's Zulip user ID — joins to `zulip_users.id` |
+| `count` | Float64 | Number of messages in this record |
+| `created_at` | DateTime64(3) | Message timestamp / aggregation period |
 
 Aggregated counts — individual message content is not collected.
 
@@ -73,14 +73,14 @@ Aggregated counts — individual message content is not collected.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` / `completed_at` | timestamp | Run timing |
-| `status` | text | `running` / `completed` / `failed` |
-| `users_collected` | numeric | Rows collected for `zulip_users` |
-| `messages_collected` | numeric | Rows collected for `zulip_messages` |
-| `api_calls` | numeric | API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (realm URL, lookback period) |
+| `run_id` | String | Unique run identifier |
+| `started_at` / `completed_at` | DateTime64(3) | Run timing |
+| `status` | String | `running` / `completed` / `failed` |
+| `users_collected` | Float64 | Rows collected for `zulip_users` |
+| `messages_collected` | Float64 | Rows collected for `zulip_messages` |
+| `api_calls` | Float64 | API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (realm URL, lookback period) |
 
 Monitoring table — not an analytics source.
 
@@ -100,18 +100,18 @@ Monitoring table — not an analytics source.
 
 | Bronze table | Silver target | Status |
 |-------------|--------------|--------|
-| `zulip_messages` | `class_communication_events` | ✓ Mapped |
+| `zulip_messages` | `class_communication_metrics` | ✓ Mapped |
 | `zulip_users` | Identity Manager (email → `person_id`) | ✓ Used for identity resolution |
 
-**Channel mapping** into `class_communication_events`:
+**Channel mapping** into `class_communication_metrics`:
 
 | source | channel | direction | Source table | Source field |
 |--------|---------|-----------|--------------|--------------|
 | `zulip` | `chat` | outbound | `zulip_messages` | `count` |
 
-**Silver step 1** uses `zulip_users.email` as the identity key (`user_email`). Each `zulip_messages` record maps to one row in `class_communication_events` — there is no channel subdivision (one Zulip record = one channel entry, unlike M365 Teams which produces multiple rows per day).
+**Silver step 1** uses `zulip_users.email` as the identity key (`user_email`). Each `zulip_messages` record maps to one row in `class_communication_metrics` — there is no channel subdivision (one Zulip record = one channel entry, unlike M365 Teams which produces multiple rows per day).
 
-**Gold**: No Gold tables are defined specifically for Zulip. Communication-level Gold metrics derive from the unified `class_communication_events` stream across all sources.
+**Gold**: No Gold tables are defined specifically for Zulip. Communication-level Gold metrics derive from the unified `class_communication_metrics` stream across all sources.
 
 ---
 

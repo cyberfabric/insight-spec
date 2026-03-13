@@ -9,7 +9,7 @@ Per-source deep-dive specifications for Constructor Insight connectors. Each fil
 - [Index](#index)
   - [Version Control](#version-control)
   - [Task Tracking](#task-tracking)
-  - [Communication](#communication)
+  - [Collaboration](#collaboration)
   - [AI Dev Tools](#ai-dev-tools)
   - [AI Tools](#ai-tools)
   - [HR / Directory](#hr-directory)
@@ -37,15 +37,17 @@ Per-source deep-dive specifications for Constructor Insight connectors. Each fil
 
 | Source | Spec | Status |
 |--------|------|--------|
+| Task Tracking (unified schema) | [`task-tracking/README.md`](task-tracking/README.md) | Draft |
 | YouTrack | [`task-tracking/youtrack.md`](task-tracking/youtrack.md) | Proposed |
 | Jira | [`task-tracking/jira.md`](task-tracking/jira.md) | Proposed |
 
-### Communication
+### Collaboration
 
 | Source | Spec | Status |
 |--------|------|--------|
-| Microsoft 365 | [`m365.md`](m365.md) | Proposed |
-| Zulip | [`zulip.md`](zulip.md) | Proposed |
+| Collaboration (unified schema) | [`collaboration/README.md`](collaboration/README.md) | Draft |
+| Microsoft 365 | [`collaboration/m365.md`](collaboration/m365.md) | Proposed |
+| Zulip | [`collaboration/zulip.md`](collaboration/zulip.md) | Proposed |
 
 ### AI Dev Tools
 
@@ -91,8 +93,9 @@ Per-source deep-dive specifications for Constructor Insight connectors. Each fil
 
 | Stream | Sources | Spec |
 |--------|---------|------|
-| `class_communication_events` | M365 (Email + Teams) + Zulip | Documented in [`../CONNECTORS_REFERENCE.md`](../CONNECTORS_REFERENCE.md#unified-stream-1-classcommunicationevents) |
-| Task Tracker (Silver → Gold) | YouTrack + Jira | Documented in [`../CONNECTORS_REFERENCE.md`](../CONNECTORS_REFERENCE.md#unified-stream-2-task-tracker-silver--gold) |
+| `class_communication_metrics` | M365 (Email + Teams) + Zulip | [`collaboration/README.md`](collaboration/README.md) |
+| `class_document_metrics` | M365 (OneDrive + SharePoint) | [`collaboration/README.md`](collaboration/README.md) — planned |
+| Task Tracker unified schema | YouTrack + Jira | [`task-tracking/README.md`](task-tracking/README.md) |
 
 ---
 

@@ -40,7 +40,7 @@
 - [Source 9: Windsurf (AI Dev Tool)](#source-9-windsurf-ai-dev-tool)
   - [`windsurf_daily_usage` — Daily aggregated usage per user](#windsurfdailyusage-daily-aggregated-usage-per-user)
   - [`windsurf_events` — Individual AI invocation events](#windsurfevents-individual-ai-invocation-events)
-- [Unified Stream 1: `class_communication_events`](#unified-stream-1-classcommunicationevents)
+- [Unified Stream 1: `class_communication_metrics`](#unified-stream-1-classcommunicationevents)
 - [Unified Stream 2: Task Tracker (Silver → Gold)](#unified-stream-2-task-tracker-silver-gold)
   - [Silver Step 1: `class_task_tracker_activities` — Unified event stream](#silver-step-1-classtasktrackeractivities-unified-event-stream)
   - [Silver Step 1 (parallel): `class_task_tracker_snapshot` — Current state (upsert)](#silver-step-1-parallel-classtasktrackersnapshot-current-state-upsert)
@@ -145,7 +145,7 @@ Source APIs (GitHub, Jira, M365, Cursor, BambooHR, ...)
 
 **Naming convention:**
 - Bronze: `{source}_{entity}` — e.g. `github_commits`, `youtrack_issue_history`
-- Silver: `class_{domain}` — e.g. `class_commits`, `class_task_tracker`, `class_communication_events`
+- Silver: `class_{domain}` — e.g. `class_commits`, `class_task_tracker`, `class_communication_metrics`
 - Gold: domain-specific derived names — e.g. `status_periods`, `throughput`
 
 Silver step 1 and step 2 share the same `class_` prefix — both represent unified, cross-source data. Step 2 adds canonical `person_id` via a separate identity resolution job.
@@ -612,7 +612,7 @@ Every state transition, reassignment, and field update is a separate row. Jira's
 | `sharedExternallyFileCount` | numeric | Files shared externally |
 | `lastActivityDate` | date | Last SharePoint activity |
 
-**What feeds downstream:** `ms365_email_activity` and `ms365_teams_activity` → `class_communication_events` (Silver step 1). OneDrive and SharePoint tables are collected but not yet mapped to a unified stream — available for future use without re-fetching.
+**What feeds downstream:** `ms365_email_activity` and `ms365_teams_activity` → `class_communication_metrics` (Silver step 1). OneDrive and SharePoint tables are collected but not yet mapped to a unified stream — available for future use without re-fetching.
 
 ---
 
@@ -771,7 +771,7 @@ Token fields are nullable — not all events have token-level detail.
 
 ---
 
-## Unified Stream 1: `class_communication_events`
+## Unified Stream 1: `class_communication_metrics`
 
 **Sources:** `ms365_email_activity` + `ms365_teams_activity` + `zulip_messages`
 
@@ -1658,7 +1658,7 @@ No `cost_cents` — flat subscription.
 
 | Stream / Silver Table | Sources | Purpose |
 |----------------------|---------|---------|
-| `class_communication_events` | M365 (Email + Teams) + Zulip | Cross-platform communication load |
+| `class_communication_metrics` | M365 (Email + Teams) + Zulip | Cross-platform communication load |
 | `class_task_tracker_activities` | YouTrack + Jira | Silver step 1 — unified append-only event stream, source-native IDs |
 | `class_task_tracker_snapshot` | YouTrack + Jira | Silver step 1 (parallel) — current state per issue, upsert |
 | `class_task_tracker` | YouTrack + Jira | Silver step 2 — identity-resolved event stream; canonical `person_id` |
@@ -1681,7 +1681,7 @@ A company may mirror the same repository from GitHub to Bitbucket (or GitLab). T
 
 ### OQ-2: Identity re-resolution strategy
 
-When Identity Manager merges two previously separate `person_id` values (or splits one), Silver step 2 tables (`class_task_tracker`, `class_communication_events`, `class_commits`, ...) become stale.
+When Identity Manager merges two previously separate `person_id` values (or splits one), Silver step 2 tables (`class_task_tracker`, `class_communication_metrics`, `class_commits`, ...) become stale.
 
 - Does the identity resolution job do a full rewrite of affected Silver rows on each run?
 - Or does Identity Manager maintain a version/history so Gold can query point-in-time person assignments?
@@ -1718,7 +1718,7 @@ This Reference defines `event_author_raw` (UInt64) and `assignee_raw` (UInt64 NU
 
 ### OQ-7: Silver table naming convention — `class_` vs `_enriched`
 
-This Reference uses `class_{domain}` naming for Silver tables (e.g. `class_commits`, `class_task_tracker`, `class_communication_events`). `IDENTITY_RESOLUTION_V3.md` (PR #2) uses `{entity}_enriched` (e.g. `commits_enriched`, `tasks_enriched`).
+This Reference uses `class_{domain}` naming for Silver tables (e.g. `class_commits`, `class_task_tracker`, `class_communication_metrics`). `IDENTITY_RESOLUTION_V3.md` (PR #2) uses `{entity}_enriched` (e.g. `commits_enriched`, `tasks_enriched`).
 
 - Which naming convention is adopted going forward?
 - All downstream references (Gold queries, identity resolution jobs) must use a single consistent scheme.
