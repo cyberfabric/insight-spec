@@ -34,6 +34,12 @@
   - [4.11 Silver Mapping Semantics](#411-silver-mapping-semantics)
 - [5. The Automation Boundary — A Mental Model](#5-the-automation-boundary--a-mental-model)
 - [6. What This Means for the Connector SDK](#6-what-this-means-for-the-connector-sdk)
+- [7. AI-Assisted Silver Layer Mapping](#7-ai-assisted-silver-layer-mapping)
+  - [7.1 What the AI analyses](#71-what-the-ai-analyses)
+  - [7.2 What the AI proposes](#72-what-the-ai-proposes)
+  - [7.3 The Connector Onboarding UI](#73-the-connector-onboarding-ui)
+  - [7.4 Creating new Silver classes](#74-creating-new-silver-classes)
+  - [7.5 What remains manual even with AI assistance](#75-what-remains-manual-even-with-ai-assistance)
 
 ---
 
@@ -52,6 +58,8 @@ Three categories of problem make full automation impossible.
 **Semantic judgment.** The most important decisions in connector design are not technical — they are analytical. Is `hs_call_disposition` a useful field? Not in isolation, because it returns a GUID, not a label. Should Zulip message text be collected? No, because Insight's privacy policy does not permit storage of individual message content. Do HubSpot contacts represent internal employees? No, they represent external customers — resolving them to `person_id` would be wrong. Does a YouTrack state transition from `In Progress` to `Resolved` mean the same thing analytically as a Jira transition from `In Progress` to `Done`? Yes — but only a human who understands both systems and the Silver layer's purpose can confirm that equivalence.
 
 A connector that automates the structural mechanics while leaving the semantic layer unaddressed would collect data faithfully and produce nothing useful. The Bronze tables would fill up; the Silver layer would contain no meaningful mappings; the Gold layer would have no metrics to serve. Full automation would not create a connector — it would create a data dump with correct timestamps.
+
+The practical conclusion is not that the semantic layer is off-limits to tooling — it is that the semantic layer cannot be *skipped*. AI can draft Silver mapping proposals, suggest enum normalisation, and surface identity key candidates by analysing Bronze data after it has been collected. But those proposals require a human to review, confirm, and override. The authorship is not eliminated; the blank-page problem is. This distinction is the foundation of the AI-assisted onboarding approach described in §7.
 
 ---
 
@@ -78,23 +86,42 @@ The clearest way to understand the automation limit is to map it against the med
 │  call, which fields to keep, how to handle structural quirks     │
 │  (multi-step calls, associations). Business logic: none yet.     │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │
+                           │  Bronze data in ClickHouse
             ╔══════════════╪══════════════╗
             ║  AUTOMATION  │  BOUNDARY    ║
             ╚══════════════╪══════════════╝
                            │
+                    ┌──────▼───────┐
+                    │  AI ANALYSIS │  🤖 reads Bronze, drafts proposals
+                    │              │  • field → Silver column candidates
+                    │              │  • enum normalisation suggestions
+                    │              │  • unit conversion detection
+                    │              │  • custom field promotion advice
+                    │              │  • identity key candidates
+                    └──────┬───────┘
+                           │  proposals (not applied automatically)
+                    ┌──────▼───────┐
+                    │  ONBOARDING  │  👤 human reviews, approves, overrides
+                    │     UI       │  • approve / reject each mapping
+                    │              │  • fix enum mappings manually
+                    │              │  • confirm identity rules
+                    │              │  • define new Silver class if needed
+                    └──────┬───────┘
+                           │  approved semantic contract
 ┌──────────────────────────▼──────────────────────────────────────┐
-│  SILVER LAYER                                     ❌ Manual       │
+│  SILVER LAYER                              ❌ Cannot be automated │
 │                                                                  │
 │  "Make data from different sources mean the same thing."         │
 │                                                                  │
 │  Step 1: Unification        Step 2: Identity      Custom fields  │
 │  (cross-source normalise)   (Resolution)          (promotion)    │
 │                                                                  │
-│  ❌ Enum equivalence         ❌ Resolution rules    ❌ Which keys  │
-│  ❌ Unit normalisation       ❌ Privacy decisions   ❌ String vs   │
-│  ❌ Derived fields           ❌ Fallback strategy      numeric?    │
-│  ❌ Semantic mapping         ❌ Internal vs external              │
+│  🤖→👤 Enum equivalence      🤖→👤 Key candidates   🤖→👤 Str/num  │
+│  🤖→👤 Unit normalisation    ❌  Privacy decisions  ❌  New class? │
+│  ❌  Derived fields          ❌  Fallback strategy               │
+│  ❌  Internal vs external                                        │
+│                                                                  │
+│  🤖→👤 = AI drafts, human approves    ❌ = human only            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -498,12 +525,15 @@ The line between the two is not the same as the line between framework code and 
 | Custom field discovery | No | OQ-YT-3, OQ-JIRA-3 — field name is instance-specific |
 | Derived fields (`is_won`, `duration`, `disposition`) | No | OQ-CRM-1 — requires multi-step API logic not in schema |
 | Multi-step collection (associations, history) | No | `hubspot_associations`, `youtrack_issue_history` — separate endpoints not visible from main schema |
-| Unit normalisation | No | Milliseconds vs minutes vs seconds across CRM, task tracking |
-| Status/enum normalisation | No | OQ-CRM-3, JSM status mapping — no universal taxonomy |
-| Identity resolution rules | No | OQ-JIRA-1, OQ-HS-1 — who is internal vs external, what to do when email is suppressed |
+| Unit normalisation | Partial (AI-assisted) | AI detects probable unit from field name + value range; human confirms — see §7.2 |
+| Status/enum normalisation | Partial (AI-assisted) | AI clusters distinct values, proposes mapping; human approves — OQ-CRM-3, see §7.2 |
+| Custom field promotion (`_ext` → Silver Map) | Partial (AI-assisted) | AI recommends str/num/drop per key based on cardinality + value patterns; human approves — see §7.2 |
+| Identity key candidates | Partial (AI-assisted) | AI flags email-shaped fields and likely external entities; human confirms rules — see §7.2 |
+| Identity resolution rules (fallback strategy) | No | OQ-JIRA-1, OQ-HS-1 — what to do when email is suppressed; internal vs external is policy |
 | Privacy / content collection decisions | No | Zulip message text, M365 email body, M365 meeting content |
 | `source_instance_id` naming | No | Human-assigned, must be stable, must be meaningful |
-| Silver semantic mapping | No | Cross-source analytical equivalence requires human judgment |
+| Silver semantic mapping (final) | Partial (AI-assisted) | AI drafts field→column mapping via Onboarding UI; human approves — see §7.3 |
+| New Silver class creation | Partial (AI-assisted) | AI drafts schema when no match found; human defines and registers class — see §7.4 |
 | Data retention constraints | No | M365 7–30 day window — documented in vendor docs, not in API schema |
 
 ---
@@ -524,14 +554,184 @@ The 10-step connector checklist from `CONNECTORS_ARCHITECTURE.md` maps onto this
 6. Bronze DDL generation — generated from the field declaration in the manifest or a companion schema file
 7. AirByte/Dagster orchestration registration — generated from the manifest; the author declares the schedule and retry policy
 
-**Steps the author must implement manually (the semantic contract):**
+**Steps the author must implement or approve (the semantic contract):**
 
-1. Source adapter implementation (`src/client.py`) — API client, multi-step collection patterns, derived field computation, custom field discovery
-2. Unifier mapping (`unifier_mapping.yaml`) — which source fields map to which Silver fields, with semantic annotations; cross-source analytical equivalences are declared here
-3. Identity resolution rules (`identity/aliases_{source}.yaml`) — which user type is resolved, which resolution strategy applies, how to handle suppressed emails or dual user models
-4. Bronze field declarations — the explicit list of fields to collect, their types, and the transformation logic for derived or converted fields
-5. Silver semantic decisions — unit conversions, enum mappings, privacy exclusions
+1. Source adapter implementation (`src/client.py`) — API client, multi-step collection patterns, derived field computation, custom field discovery. Structural scaffolding generated; business logic authored manually.
+2. Unifier mapping (`unifier_mapping.yaml`) — which source fields map to which Silver fields. **AI-drafted via Onboarding UI** (§7.3); author reviews and approves each mapping, fixes low-confidence proposals.
+3. Enum and unit normalisation — how Bronze vocabulary maps to Silver enumerations; unit conversions for duration, size, currency. **AI proposes** based on distinct value analysis (§7.2); author confirms or overrides.
+4. Identity resolution rules (`identity/aliases_{source}.yaml`) — which user type is resolved, which resolution strategy applies. **AI identifies candidates** (email-shaped fields, likely external entities); author confirms the rules and specifies fallback strategy for suppressed emails and dual user models.
+5. Custom field promotion list — which `_ext` keys surface in Silver `Map(String,String)` or `Map(String,Float64)`. **AI recommends** based on cardinality and value type analysis (§7.2); author approves and labels promoted fields.
+6. Privacy exclusions and data retention constraints — what not to collect, how far back to pull. Always manual; not derivable from Bronze data or API schema.
+7. New Silver class definition — when no existing `class_*` table fits the data. **AI drafts the schema** (§7.4); author reviews column names, types, and registers the class.
 
-The boundary is not between "easy steps" and "hard steps." It is between steps that require no knowledge of the source domain (structural) and steps that require deep knowledge of what the data means (semantic). The SDK should make the structural steps invisible so that the connector specification document describes only semantic choices — and the resulting specification is purely a record of analytical intent, not a mix of protocol mechanics and domain knowledge.
+The boundary is not between "easy steps" and "hard steps." It is between steps that require no knowledge of the source domain (structural) and steps that require understanding of what the data means (semantic). The SDK absorbs the structural steps entirely. The AI-assisted onboarding layer (§7) converts the semantic steps from blank-page authorship into proposal review — reducing the cognitive load while preserving human accountability for every semantic decision.
 
-The right measure of a connector SDK's quality is not "how much code does it generate" but "how clearly does it separate the structural contract from the semantic implementation." A SDK that generates 500 lines of boilerplate while leaving the connector author to make undocumented decisions about unit conversions and identity boundaries has failed at its core purpose. A SDK that generates nothing but forces the author to declare every semantic decision explicitly — and then enforces those declarations at validation time — has succeeded.
+The right measure of a connector SDK's quality is not "how much code does it generate" but "how clearly does it separate the structural contract from the semantic implementation, and how well it supports human review of the semantic layer." A SDK that generates structural boilerplate while leaving the connector author to make undocumented semantic decisions has failed at its core purpose. A SDK that generates the structural layer completely, drafts the semantic layer via AI proposals, and enforces that every proposal is explicitly approved or overridden — and records those decisions in the connector spec — has succeeded.
+
+---
+
+## 7. AI-Assisted Silver Layer Mapping
+
+The Bronze/Silver boundary is where automation ends and authorship begins. AI cannot replace that authorship — but it can draft the first version, narrow the decision space, and surface what the author actually needs to decide. The goal is not to automate Silver mapping, but to eliminate the blank-page problem.
+
+### 7.1 What the AI analyses
+
+When a connector is first connected and Bronze sync has run, the AI analysis job reads directly from ClickHouse:
+
+- **Distinct field values** — the actual vocabulary in each Bronze column; basis for enum normalisation suggestions
+- **Field value statistics** — type distribution, nullability rate, cardinality, numeric range; basis for type assignments and custom field promotion decisions
+- **Field names** — semantic similarity to known Silver columns and to fields in other connectors' Bronze tables
+- **Schema structure** — which tables exist, how they relate via foreign keys, which fields look like identity keys (contain `email`, `user_id`, `account_id`)
+
+The analysis job does not touch the Silver layer. It reads Bronze, computes proposals, writes them to a proposal store. Nothing is applied automatically.
+
+### 7.2 What the AI proposes
+
+**Field → Silver column mapping**
+
+For each Bronze table, the AI proposes which fields map to which Silver column in an existing `class_*` table. The proposal includes a confidence score and the reasoning:
+
+```
+youtrack_issues.estimation  →  class_issues.story_points   (0.91 — numeric field, name matches)
+youtrack_issues.state       →  class_issues.status         (0.88 — enum field, >10 distinct values)
+youtrack_issues.created     →  class_issues.created_at     (0.97 — DateTime64, name match)
+youtrack_issues.reporter_id →  class_issues.author_id      (0.74 — ID field, creator semantics)
+```
+
+**Enum normalisation**
+
+For fields mapped to a Silver enum column, the AI clusters the distinct Bronze values and proposes a normalisation table:
+
+```
+youtrack_issues.state distinct values → class_issues.status
+  "In Progress"   →  in_progress
+  "Open"          →  open
+  "Resolved"      →  done          ← AI inferred from name; human should confirm
+  "Fixed"         →  done          ← same
+  "Won't Fix"     →  cancelled
+  "Duplicate"     →  cancelled
+  [unmapped: "Awaiting Info", "On Hold"]  ← flagged, require human decision
+```
+
+Unmapped values are always flagged explicitly — the AI never silently drops data.
+
+**Unit conversion**
+
+When a numeric field's unit differs from the Silver target:
+
+```
+hs_call_duration  →  crm_activities.duration_seconds
+  detected unit: milliseconds  (values: 3000–600000, field name contains "duration")
+  proposed conversion: value / 1000
+  confidence: 0.82
+```
+
+**Custom field promotion**
+
+For `_ext` key-value tables, the AI analyses all key names and their value patterns across collected data and proposes:
+
+```
+bamboohr_employee_ext key analysis:
+  "salary_band"        →  custom_str_attrs    (string, low cardinality: 6 distinct values)
+  "years_experience"   →  custom_num_attrs    (numeric: 0–35, parseable as Float64)
+  "cost_centre"        →  custom_str_attrs    (string, joins to org_units)
+  "internal_bio_text"  →  DROP                (high cardinality, likely PII, too long for Map)
+  "last_review_date"   →  custom_str_attrs    (date string — consider typed column in future)
+```
+
+**Identity key candidates**
+
+```
+hubspot_contacts.email      →  identity key candidate  (email format, 100% non-null)
+  WARNING: hubspot_contacts is likely an external entity (customers, not employees)
+  RECOMMENDATION: do not resolve to person_id — set identity_resolution: none
+hubspot_owners.email        →  identity key candidate  (email format, 100% non-null)
+  RECOMMENDATION: resolve to person_id via email lookup
+```
+
+### 7.3 The Connector Onboarding UI
+
+YAML proposals are not sufficient because they require the connector author to manually diff files and reason about changes in a text editor. The onboarding workflow belongs in a UI where proposals are displayed as actionable decisions.
+
+The Connector Onboarding UI is the control surface for the Silver mapping step. It is accessed after Bronze sync has run and AI analysis has produced its proposals.
+
+**Mapping review screen**
+
+Each proposed field mapping is shown as a row with a status indicator:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ youtrack_issues  →  class_issues                               3/14 pending │
+├──────────────────────┬──────────────────────┬──────────┬────────────────┤
+│ Bronze field         │ Silver column        │ Status   │ Action         │
+├──────────────────────┼──────────────────────┼──────────┼────────────────┤
+│ id_readable          │ issue_key            │ ✅ Auto  │                │
+│ summary              │ title                │ ✅ Auto  │                │
+│ estimation           │ story_points         │ 🤖 Prop  │ Approve / Edit │
+│ state                │ status               │ 🤖 Prop  │ Approve / Edit │
+│ reporter_id          │ author_id            │ 🤖 Prop  │ Approve / Edit │
+│ sprint.name          │ sprint_name          │ ⚠️ Review│ Map / Skip     │
+│ custom_field_42      │ (no match)           │ ❓ Unmap │ Map / Drop     │
+└──────────────────────┴──────────────────────┴──────────┴────────────────┘
+```
+
+Statuses:
+- **Auto** — high-confidence exact match; applied without review unless overridden
+- **Prop** — AI-proposed match above threshold; requires one-click approval or manual override
+- **Review** — low-confidence match or ambiguous case; always requires human decision
+- **Unmap** — no Silver column found; human chooses: map manually, add to custom attrs, or drop
+
+**Enum mapping screen**
+
+Opened per field when the Silver column is an enum. Shows distinct Bronze values on the left, proposed Silver values on the right. Unmapped values are highlighted. The operator can drag-and-drop or type to override any mapping. New values that appear after the initial setup trigger a re-review notification.
+
+**Custom field promotion screen**
+
+Shows the `_ext` key analysis: a table of keys, their value sample, cardinality, and the AI's `custom_str_attrs` / `custom_num_attrs` / `DROP` recommendation. The operator approves the list or modifies it. Fields promoted to `custom_num_attrs` get a unit label the operator can optionally set.
+
+**Identity resolution screen**
+
+Shows each candidate identity field with the AI's recommendation. The operator confirms: resolve to `person_id`, mark as external (do not resolve), or mark as system user (exclude). For fields where email may be suppressed (Jira Cloud), the operator selects the fallback strategy: use `account_id` as a secondary key, exclude from person-level analytics, or flag the record.
+
+### 7.4 Creating new Silver classes
+
+Not every connector maps cleanly to an existing `class_*` table. A new source may bring a data type that the platform has not seen before — or may represent a domain (e.g., CI/CD runs, code quality scores) where no Silver schema yet exists.
+
+The Onboarding UI surfaces this explicitly. If the AI cannot map >30% of a Bronze table's fields to any existing Silver class, it flags the table:
+
+```
+⚠️  jenkins_builds — no matching Silver class found
+    Closest match: class_issues (26% field overlap)
+    Recommendation: define new class 'class_cicd_runs'
+```
+
+The operator can then initiate a **new class definition** flow:
+
+1. **AI drafts the schema** — proposes a `class_cicd_runs` table structure based on the Bronze fields, applying platform conventions (standard metadata columns, `source_instance_id`, `person_id` if an identity field is found, `data_source` enum)
+2. **Operator reviews and edits** — column names, types, which fields are required vs optional, whether a Silver Step 2 (person enrichment) applies
+3. **Schema is registered** — the new `class_*` table definition is added to the platform's Silver schema registry; it becomes available as a mapping target for all future connectors in the same domain
+4. **The onboarding resumes** — now that the class exists, the current connector's Bronze tables can be mapped to it
+
+This is how the Silver layer grows: not by predicting all future data types up front, but by adding classes incrementally as new connectors are onboarded and humans confirm that a new class is warranted.
+
+**Guardrails for new class creation:**
+
+- New classes must follow naming conventions (`class_<domain_noun>`) and include the standard metadata columns
+- The UI warns if a proposed new class overlaps significantly with an existing one (possible misclassification)
+- New class additions go through a review step if multiple engineers have access to the onboarding tool
+- The platform maintains a schema changelog so new class additions are traceable
+
+### 7.5 What remains manual even with AI assistance
+
+AI narrows the decision space but does not eliminate authorship. Some decisions cannot be made from data alone and will always require human confirmation:
+
+| Decision | Why AI cannot make it |
+|----------|----------------------|
+| Internal vs external entity | Requires understanding of business context (HubSpot contacts = customers, not employees) |
+| Privacy exclusions | Whether to collect message text, email body, or call notes is a policy decision |
+| Final enum normalisation | "Awaiting Info" — is this `open` or a separate state? Only the analyst who knows the workflow can decide |
+| Fallback identity strategy | When email is suppressed, the fallback choice (exclude vs flag vs secondary key) is a product decision |
+| New Silver class approval | Whether a new entity type warrants a new class, or should be absorbed into an existing one, requires platform-level judgment |
+| Unit disambiguation | If the AI detects a likely unit but confidence is below threshold, the author must confirm from API documentation |
+
+The onboarding UI makes these decisions visible and structured, but it does not answer them. The output of the UI is a complete semantic contract — every field mapped, every enum resolved, every identity rule declared — which then drives both the Silver transformation job and the connector spec documentation automatically.
