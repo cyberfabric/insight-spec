@@ -331,14 +331,16 @@ Identity Resolution has three versions in the repository simultaneously — unde
 
 ### Design Tools
 
-**Domain schema**: `design/README.md` — `In PR` (#17)
-**Silver streams**: `class_design_activity`
+**Domain PRD**: [`design/domain/PRD.md`](connectors/design/domain/PRD.md) — Silver layer requirements (supersedes former `design/README.md`)
+**Silver streams**: Design activity Silver table (concrete name in DESIGN)
 
-| Connector | Spec | Spec Status | Priority | Open Questions | Notes |
-|-----------|------|-------------|----------|----------------|-------|
-| Figma | [`design/figma.md`](connectors/design/figma.md) | Draft | P2 | OQ-FIGMA-1, OQ-FIGMA-2, OQ-FIGMA-3 | Primary design tool at Virtuozzo. OQ-FIGMA-1: activity API granularity. OQ-DESIGN-1..4 are cross-source domain questions. |
+**New directory convention**: Design Tools is the first domain to adopt the PRD/DESIGN/ADR per-folder structure (discussed in Arch sync 2026-03-13). Each connector and the domain itself has a dedicated folder with separate PRD, DESIGN, and ADR documents. Other domains will migrate to this structure incrementally.
 
-**Gaps**: Domain schema in PR #17. Only one connector in this domain currently — schema will expand when other design tools (Adobe XD, Sketch) are added.
+| Connector | Spec | Spec Status | Priority | Notes |
+|-----------|------|-------------|----------|-------|
+| Figma | [`design/figma/PRD.md`](connectors/design/figma/PRD.md) | Draft | P2 | Primary design tool. Connector PRD complete; DESIGN pending. Old `design/figma.md` superseded. |
+
+**Gaps**: DESIGN documents not yet written (Figma connector Bronze schema, Silver pipeline implementation). Only one connector in this domain currently — domain schema designed for extensibility to Sketch, Adobe XD.
 
 ---
 
