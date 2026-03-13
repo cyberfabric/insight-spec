@@ -100,18 +100,18 @@ Monitoring table — not an analytics source.
 
 | Bronze table | Silver target | Status |
 |-------------|--------------|--------|
-| `zulip_messages` | `class_communication_events` | ✓ Mapped |
+| `zulip_messages` | `class_communication_metrics` | ✓ Mapped |
 | `zulip_users` | Identity Manager (email → `person_id`) | ✓ Used for identity resolution |
 
-**Channel mapping** into `class_communication_events`:
+**Channel mapping** into `class_communication_metrics`:
 
 | source | channel | direction | Source table | Source field |
 |--------|---------|-----------|--------------|--------------|
 | `zulip` | `chat` | outbound | `zulip_messages` | `count` |
 
-**Silver step 1** uses `zulip_users.email` as the identity key (`user_email`). Each `zulip_messages` record maps to one row in `class_communication_events` — there is no channel subdivision (one Zulip record = one channel entry, unlike M365 Teams which produces multiple rows per day).
+**Silver step 1** uses `zulip_users.email` as the identity key (`user_email`). Each `zulip_messages` record maps to one row in `class_communication_metrics` — there is no channel subdivision (one Zulip record = one channel entry, unlike M365 Teams which produces multiple rows per day).
 
-**Gold**: No Gold tables are defined specifically for Zulip. Communication-level Gold metrics derive from the unified `class_communication_events` stream across all sources.
+**Gold**: No Gold tables are defined specifically for Zulip. Communication-level Gold metrics derive from the unified `class_communication_metrics` stream across all sources.
 
 ---
 
