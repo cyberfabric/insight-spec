@@ -276,7 +276,7 @@ Monitoring table — not an analytics source.
 |-------------|--------------|--------|
 | `gitlab_commits` | `class_commits` | Planned — stream not yet defined |
 | `gitlab_merge_requests` | `class_pr_activity` | Planned — stream not yet defined |
-| `gitlab_ticket_refs` | Used for `class_task_tracker` cross-reference | Planned |
+| `gitlab_ticket_refs` | Cross-domain join → `class_task_tracker_activities.task_id` | Planned |
 | `gitlab_repositories` | *(reference table)* | No unified stream |
 | `gitlab_branches` | *(reference table)* | No unified stream |
 | `gitlab_num_stat` + `gitlab_files` | *(granular detail)* | Available — no unified stream defined yet |

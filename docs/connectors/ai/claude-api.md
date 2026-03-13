@@ -46,15 +46,15 @@ Standalone specification for the Claude API (AI Tool) connector. Expands Source 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `date` | date | Usage date |
-| `api_key_id` | text | API key identifier (name or last-4 alias from Anthropic Console) |
-| `model` | text | Model ID, e.g. `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
-| `request_count` | numeric | Number of API requests |
-| `input_tokens` | numeric | Input tokens consumed |
-| `output_tokens` | numeric | Output tokens generated |
-| `cache_read_tokens` | numeric | Tokens served from prompt cache |
-| `cache_write_tokens` | numeric | Tokens written to prompt cache |
-| `total_cost_cents` | numeric | Total cost in cents |
+| `date` | Date | Usage date |
+| `api_key_id` | String | API key identifier (name or last-4 alias from Anthropic Console) |
+| `model` | String | Model ID, e.g. `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5` |
+| `request_count` | Float64 | Number of API requests |
+| `input_tokens` | Float64 | Input tokens consumed |
+| `output_tokens` | Float64 | Output tokens generated |
+| `cache_read_tokens` | Float64 | Tokens served from prompt cache |
+| `cache_write_tokens` | Float64 | Tokens written to prompt cache |
+| `total_cost_cents` | Float64 | Total cost in cents |
 
 Granularity: one row per `(date, api_key_id, model)`. No user attribution at this level — user breakdown requires the requests table.
 
@@ -66,18 +66,18 @@ Available only when the caller passes `X-Anthropic-User-Id` in the request heade
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `request_id` | text | Unique request ID from Anthropic response headers |
-| `timestamp` | timestamptz | Request timestamp |
-| `api_key_id` | text | API key used |
-| `user_id` | text | Value of `X-Anthropic-User-Id` header — caller-defined identifier (nullable) |
-| `model` | text | Model ID |
-| `input_tokens` | numeric | Input tokens |
-| `output_tokens` | numeric | Output tokens |
-| `cache_read_tokens` | numeric | Cache read tokens |
-| `cache_write_tokens` | numeric | Cache write tokens |
-| `cost_cents` | numeric | Request cost in cents |
-| `stop_reason` | text | Why generation stopped: `end_turn` / `max_tokens` / `stop_sequence` / `tool_use` |
-| `application` | text | Internal application tag — identifies which product or service made the call (caller-set convention, not an Anthropic API field) |
+| `request_id` | String | Unique request ID from Anthropic response headers |
+| `timestamp` | DateTime64(3) | Request timestamp |
+| `api_key_id` | String | API key used |
+| `user_id` | String | Value of `X-Anthropic-User-Id` header — caller-defined identifier (nullable) |
+| `model` | String | Model ID |
+| `input_tokens` | Float64 | Input tokens |
+| `output_tokens` | Float64 | Output tokens |
+| `cache_read_tokens` | Float64 | Cache read tokens |
+| `cache_write_tokens` | Float64 | Cache write tokens |
+| `cost_cents` | Float64 | Request cost in cents |
+| `stop_reason` | String | Why generation stopped: `end_turn` / `max_tokens` / `stop_sequence` / `tool_use` |
+| `application` | String | Internal application tag — identifies which product or service made the call (caller-set convention, not an Anthropic API field) |
 
 `application` is a caller convention — callers must set it themselves. Absent without explicit instrumentation.
 
@@ -87,15 +87,15 @@ Available only when the caller passes `X-Anthropic-User-Id` in the request heade
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `daily_usage_records_collected` | numeric | Rows collected for `claude_api_daily_usage` |
-| `request_records_collected` | numeric | Rows collected for `claude_api_requests` |
-| `api_calls` | numeric | Admin API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (workspace, lookback period, key filter) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `daily_usage_records_collected` | Float64 | Rows collected for `claude_api_daily_usage` |
+| `request_records_collected` | Float64 | Rows collected for `claude_api_requests` |
+| `api_calls` | Float64 | Admin API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (workspace, lookback period, key filter) |
 
 Monitoring table — not an analytics source.
 
@@ -136,10 +136,8 @@ See also: `CONNECTORS_REFERENCE.md` OQ-3.
 
 ### OQ-CAPI-2: `class_ai_api_usage` Silver design — nullable `person_id`
 
-When `user_id` is NULL (uninstrumented requests), the Silver row has no person attribution. Options:
+**CLOSED.** `class_ai_api_usage` is the single Silver target for all Claude API usage. Rows with `person_id = NULL` are valid and represent unattributed API usage (requests where `X-Anthropic-User-Id` was not set). There is no separate `class_ai_usage` stream — that name was considered but will not be created.
 
-- Store rows with `person_id = NULL` (partial attribution Silver table)
-- Separate `class_ai_api_usage` (per-key, no person) from `class_ai_usage` (per-person, when available)
-- Track per-key usage in Gold without a Silver unification step
+Both `claude_api_daily_usage` (key-level aggregates) and `claude_api_requests` (per-request events with optional user attribution) map to `class_ai_api_usage`. NULL `person_id` rows are queryable at Gold level for cost attribution by API key and application even without person resolution.
 
 See also: `CONNECTORS_REFERENCE.md` OQ-3.

@@ -536,7 +536,7 @@ Monitoring table — not an analytics source.
 
     | `bitbucket_pull_requests` | `class_pr_activity` | Planned — stream not yet defined |
 
-    # Timestamps (not available in Bitbucket Server API)| `bitbucket_ticket_refs` | Used for `class_task_tracker` cross-reference | Planned |
+    # Timestamps (not available in Bitbucket Server API)| `bitbucket_ticket_refs` | Cross-domain join → `class_task_tracker_activities.task_id` | Planned |
 
     'created_on': None,| `bitbucket_repositories` | *(reference table)* | No unified stream |
 

@@ -55,12 +55,12 @@ Standalone specification for the Claude Team Plan (AI Tool) connector. Expands S
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `user_id` | text | Anthropic platform user ID |
-| `email` | text | User email — primary key for cross-system identity resolution |
-| `role` | text | `owner` / `admin` / `member` |
-| `status` | text | `active` / `inactive` / `pending` |
-| `added_at` | timestamptz | When the seat was assigned |
-| `last_active_at` | timestamptz | Last recorded activity across all clients |
+| `user_id` | String | Anthropic platform user ID |
+| `email` | String | User email — primary key for cross-system identity resolution |
+| `role` | String | `owner` / `admin` / `member` |
+| `status` | String | `active` / `inactive` / `pending` |
+| `added_at` | DateTime64(3) | When the seat was assigned |
+| `last_active_at` | DateTime64(3) | Last recorded activity across all clients |
 
 One row per user. Current-state only — no versioning.
 
@@ -70,18 +70,18 @@ One row per user. Current-state only — no versioning.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `user_id` | text | Anthropic platform user ID |
-| `email` | text | User email — identity key |
-| `date` | date | Activity date |
-| `client` | text | `web` / `claude_code` / `mobile` — which surface was used |
-| `model` | text | Model ID, e.g. `claude-opus-4-6`, `claude-sonnet-4-6` |
-| `message_count` | numeric | Number of messages / turns sent |
-| `conversation_count` | numeric | Number of distinct conversations or sessions |
-| `input_tokens` | numeric | Input tokens consumed |
-| `output_tokens` | numeric | Output tokens generated |
-| `cache_read_tokens` | numeric | Tokens served from prompt cache |
-| `cache_write_tokens` | numeric | Tokens written to prompt cache |
-| `tool_use_count` | numeric | Tool/function calls made (relevant for Claude Code agent sessions) |
+| `user_id` | String | Anthropic platform user ID |
+| `email` | String | User email — identity key |
+| `date` | Date | Activity date |
+| `client` | String | `web` / `claude_code` / `mobile` — which surface was used |
+| `model` | String | Model ID, e.g. `claude-opus-4-6`, `claude-sonnet-4-6` |
+| `message_count` | Float64 | Number of messages / turns sent |
+| `conversation_count` | Float64 | Number of distinct conversations or sessions |
+| `input_tokens` | Float64 | Input tokens consumed |
+| `output_tokens` | Float64 | Output tokens generated |
+| `cache_read_tokens` | Float64 | Tokens served from prompt cache |
+| `cache_write_tokens` | Float64 | Tokens written to prompt cache |
+| `tool_use_count` | Float64 | Tool/function calls made (relevant for Claude Code agent sessions) |
 
 No `cost_cents` field — under a Team subscription the per-token cost is not meaningful; the cost is the seat fee.
 
@@ -93,15 +93,15 @@ No `cost_cents` field — under a Team subscription the per-token cost is not me
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `seats_collected` | numeric | Rows collected for `claude_team_seats` |
-| `activity_records_collected` | numeric | Rows collected for `claude_team_activity` |
-| `api_calls` | numeric | Admin API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (workspace, lookback period) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `seats_collected` | Float64 | Rows collected for `claude_team_seats` |
+| `activity_records_collected` | Float64 | Rows collected for `claude_team_activity` |
+| `api_calls` | Float64 | Admin API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (workspace, lookback period) |
 
 Monitoring table — not an analytics source.
 

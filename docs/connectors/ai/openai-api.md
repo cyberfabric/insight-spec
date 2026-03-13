@@ -46,15 +46,15 @@ Standalone specification for the OpenAI API (AI Tool) connector. Expands Source 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `date` | date | Usage date |
-| `api_key_id` | text | API key identifier (name or last-4 alias) |
-| `model` | text | Model ID, e.g. `gpt-4o`, `gpt-4o-mini`, `o1`, `o3-mini` |
-| `request_count` | numeric | Number of API requests |
-| `input_tokens` | numeric | Input (prompt) tokens consumed |
-| `output_tokens` | numeric | Output (completion) tokens generated |
-| `cached_tokens` | numeric | Tokens served from prompt cache |
-| `reasoning_tokens` | numeric | Internal reasoning tokens (o1/o3 models only; billed but not in output) |
-| `total_cost_cents` | numeric | Total cost in cents |
+| `date` | Date | Usage date |
+| `api_key_id` | String | API key identifier (name or last-4 alias) |
+| `model` | String | Model ID, e.g. `gpt-4o`, `gpt-4o-mini`, `o1`, `o3-mini` |
+| `request_count` | Float64 | Number of API requests |
+| `input_tokens` | Float64 | Input (prompt) tokens consumed |
+| `output_tokens` | Float64 | Output (completion) tokens generated |
+| `cached_tokens` | Float64 | Tokens served from prompt cache |
+| `reasoning_tokens` | Float64 | Internal reasoning tokens (o1/o3 models only; billed but not in output) |
+| `total_cost_cents` | Float64 | Total cost in cents |
 
 Granularity: one row per `(date, api_key_id, model)`. `reasoning_tokens` is zero for non-reasoning models.
 
@@ -66,18 +66,18 @@ Available when the caller passes a `user` field in the request body. Without thi
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `request_id` | text | Unique request ID from response headers |
-| `timestamp` | timestamptz | Request timestamp |
-| `api_key_id` | text | API key used |
-| `user_id` | text | Value of `user` field in the request body — caller-defined identifier (nullable) |
-| `model` | text | Model ID |
-| `input_tokens` | numeric | Input tokens |
-| `output_tokens` | numeric | Output tokens |
-| `cached_tokens` | numeric | Cached tokens |
-| `reasoning_tokens` | numeric | Reasoning tokens (o1/o3 only; nullable) |
-| `cost_cents` | numeric | Request cost in cents |
-| `finish_reason` | text | Why generation stopped: `stop` / `length` / `tool_calls` / `content_filter` |
-| `application` | text | Internal application tag (caller-set convention) |
+| `request_id` | String | Unique request ID from response headers |
+| `timestamp` | DateTime64(3) | Request timestamp |
+| `api_key_id` | String | API key used |
+| `user_id` | String | Value of `user` field in the request body — caller-defined identifier (nullable) |
+| `model` | String | Model ID |
+| `input_tokens` | Float64 | Input tokens |
+| `output_tokens` | Float64 | Output tokens |
+| `cached_tokens` | Float64 | Cached tokens |
+| `reasoning_tokens` | Float64 | Reasoning tokens (o1/o3 only; nullable) |
+| `cost_cents` | Float64 | Request cost in cents |
+| `finish_reason` | String | Why generation stopped: `stop` / `length` / `tool_calls` / `content_filter` |
+| `application` | String | Internal application tag (caller-set convention) |
 
 `reasoning_tokens` is specific to o1/o3 models — they consume internal tokens before producing a response; these are billed but not visible in `output_tokens`.
 
@@ -87,15 +87,15 @@ Available when the caller passes a `user` field in the request body. Without thi
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `daily_usage_records_collected` | numeric | Rows collected for `openai_api_daily_usage` |
-| `request_records_collected` | numeric | Rows collected for `openai_api_requests` |
-| `api_calls` | numeric | Admin API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (organization, lookback period, key filter) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `daily_usage_records_collected` | Float64 | Rows collected for `openai_api_daily_usage` |
+| `request_records_collected` | Float64 | Rows collected for `openai_api_requests` |
+| `api_calls` | Float64 | Admin API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (organization, lookback period, key filter) |
 
 Monitoring table — not an analytics source.
 

@@ -54,22 +54,22 @@ Standalone specification for the Windsurf (AI Dev Tool) connector. Expands Sourc
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `email` | text | User email — identity key |
-| `user_id` | text | Windsurf / Codeium platform user ID |
-| `date` | date | Activity date |
-| `is_active` | boolean | Whether user had any activity this day |
-| `completions_shown` | numeric | AI completion suggestions shown |
-| `completions_accepted` | numeric | Suggestions accepted (tab) |
-| `supercomplete_shown` | numeric | Supercomplete suggestions shown |
-| `supercomplete_accepted` | numeric | Supercomplete suggestions accepted |
-| `lines_accepted` | numeric | Lines of code accepted from AI suggestions |
-| `cascade_chat_requests` | numeric | Cascade chat interactions |
-| `cascade_agent_requests` | numeric | Cascade agent (multi-step) interactions |
-| `cascade_write_actions` | numeric | File write operations performed by Cascade agent |
-| `most_used_model` | text | Most used AI model that day, e.g. `claude-3.5-sonnet` |
-| `client_version` | text | Windsurf IDE version |
-| `subscription_included_reqs` | numeric | Requests covered by subscription |
-| `usage_based_reqs` | numeric | Requests on usage-based billing |
+| `email` | String | User email — identity key |
+| `user_id` | String | Windsurf / Codeium platform user ID |
+| `date` | Date | Activity date |
+| `is_active` | Bool | Whether user had any activity this day |
+| `completions_shown` | Float64 | AI completion suggestions shown |
+| `completions_accepted` | Float64 | Suggestions accepted (tab) |
+| `supercomplete_shown` | Float64 | Supercomplete suggestions shown |
+| `supercomplete_accepted` | Float64 | Supercomplete suggestions accepted |
+| `lines_accepted` | Float64 | Lines of code accepted from AI suggestions |
+| `cascade_chat_requests` | Float64 | Cascade chat interactions |
+| `cascade_agent_requests` | Float64 | Cascade agent (multi-step) interactions |
+| `cascade_write_actions` | Float64 | File write operations performed by Cascade agent |
+| `most_used_model` | String | Most used AI model that day, e.g. `claude-3.5-sonnet` |
+| `client_version` | String | Windsurf IDE version |
+| `subscription_included_reqs` | Float64 | Requests covered by subscription |
+| `usage_based_reqs` | Float64 | Requests on usage-based billing |
 
 Note: `windsurf_daily_usage` has no `unique` primary key column — the natural key is `(email, date)`.
 
@@ -79,18 +79,18 @@ Note: `windsurf_daily_usage` has no `unique` primary key column — the natural 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `user_email` | text | User email — identity key |
-| `event_id` | text | Unique event identifier — primary key |
-| `timestamp` | timestamptz | Event timestamp |
-| `kind` | text | Event type: `completion`, `supercomplete`, `cascade_chat`, `cascade_agent`, etc. |
-| `model` | text | AI model used, e.g. `claude-3.5-sonnet`, `gpt-4o` |
-| `is_chargeable` | boolean | Whether event incurs billing |
-| `request_cost` | numeric | Request cost in credits |
-| `is_token_based_call` | boolean | Billed by tokens vs per-request |
-| `input_tokens` | numeric | Tokens in the prompt (nullable) |
-| `output_tokens` | numeric | Tokens in the model response (nullable) |
-| `cache_read_tokens` | numeric | Tokens served from prompt cache (nullable) |
-| `total_cents` | numeric | Total cost in cents (nullable) |
+| `user_email` | String | User email — identity key |
+| `event_id` | String | Unique event identifier — primary key |
+| `timestamp` | DateTime64(3) | Event timestamp |
+| `kind` | String | Event type: `completion`, `supercomplete`, `cascade_chat`, `cascade_agent`, etc. |
+| `model` | String | AI model used, e.g. `claude-3.5-sonnet`, `gpt-4o` |
+| `is_chargeable` | Bool | Whether event incurs billing |
+| `request_cost` | Float64 | Request cost in credits |
+| `is_token_based_call` | Bool | Billed by tokens vs per-request |
+| `input_tokens` | Float64 | Tokens in the prompt (nullable) |
+| `output_tokens` | Float64 | Tokens in the model response (nullable) |
+| `cache_read_tokens` | Float64 | Tokens served from prompt cache (nullable) |
+| `total_cents` | Float64 | Total cost in cents (nullable) |
 
 Token fields are nullable — not all events have token-level detail. Unlike Cursor, these are included inline rather than in a separate table.
 
@@ -100,15 +100,15 @@ Token fields are nullable — not all events have token-level detail. Unlike Cur
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `daily_usage_records_collected` | numeric | Rows collected for `windsurf_daily_usage` |
-| `events_collected` | numeric | Rows collected for `windsurf_events` |
-| `api_calls` | numeric | API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (team, lookback period) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `daily_usage_records_collected` | Float64 | Rows collected for `windsurf_daily_usage` |
+| `events_collected` | Float64 | Rows collected for `windsurf_events` |
+| `api_calls` | Float64 | API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (team, lookback period) |
 
 Monitoring table — not an analytics source.
 

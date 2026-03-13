@@ -744,7 +744,7 @@ WHERE ext.property_key = 'hotfix_flag'
 | `git_commits_ext` | *(enrichment data)* | Merged into `class_commits` during Silver transformation |
 | `git_pull_requests` | `class_pr_activity` | Planned — stream not yet defined |
 | `git_pull_requests_ext` | *(enrichment data)* | Merged into `class_pr_activity` during Silver transformation |
-| `git_tickets` | Used for `class_task_tracker` cross-reference | Planned |
+| `git_tickets` | Cross-domain join → `class_task_tracker_activities.task_id` | Planned |
 | `git_commit_files` | *(granular detail)* | Available — no unified stream defined yet |
 | `git_pull_requests_reviewers` | *(review analytics)* | Available — aggregated into PR-level metrics |
 | `git_pull_requests_comments` | *(review analytics)* | Available — aggregated into PR-level metrics |

@@ -68,6 +68,11 @@ Insight's architecture is designed for **50M+ rows over 3 years** based on the f
 | Portfolio Owners | Cross-company benchmarking with comparable definitions |
 | Operational Leaders | Early warnings on coordination and productivity risks |
 | Engineering Managers | Team performance visibility and anomaly detection |
+| Sales Managers | Rep activity volume, pipeline health, and outreach productivity |
+| Marketing Leaders | Campaign activity, lead generation, and funnel contribution |
+| Operations Leaders | Cross-functional workflow efficiency and throughput |
+
+> **Principle: Measure all employees, not just engineers.** Engineering headcount is typically a minority of the total workforce — for example, at Acronis, engineers are ~26% of headcount and ~15% of costs. Limiting measurement to engineering roles means the majority of the organization remains a blind spot. Insight is designed to measure productivity signals across all employee functions using domain-appropriate metrics for each role.
 
 ### Education Segment
 
@@ -504,6 +509,17 @@ User-facing interfaces for data consumption:
 - **Alerts & Reports**: Scheduled and triggered notifications
 - **Export**: Data export in various formats (CSV, Excel, API)
 
+#### Dashboard Taxonomy (3+1 Types)
+
+All dashboards in the platform fall into one of four standard types:
+
+| Type | Audience | Scope | Description |
+|------|----------|-------|-------------|
+| **Team Dashboard** | Engineering/functional managers | Single team or squad | Tracks team-level metrics — velocity, communication load, quality signals. The manager's primary view. |
+| **Individual Dashboard** | Individual contributors | Self (own data only) | Personal productivity self-service view. Individuals can see their own metrics without manager mediation. |
+| **Company / Portfolio Dashboard** | Executives, portfolio owners | Full org or multi-company | Org-wide rollup view. Enables cross-team and cross-company benchmarking. |
+| **Custom Dashboard** | Analysts, power users | User-defined | Metric combinations and filters defined by the user. Saved views for recurring reporting needs. |
+
 ---
 
 ## Layer Separation Benefits
@@ -829,6 +845,7 @@ An analyst receives a request for a new metric:
 5. **The system prioritizes trust over novelty**
 6. **Full transparency in all calculations and sources**
 7. **Recommendations, not automated judgments**
+8. **Productivity metrics must always be paired with quality signals.** Optimizing productivity in isolation — without quality gates — produces vanity metrics, not meaningful insight. High commit volume with low test coverage is a negative signal, not a positive one. Every productivity metric in the platform should have a corresponding quality counterpart or be clearly annotated when quality data is unavailable.
 
 ## Implementation Phases
 
@@ -891,6 +908,19 @@ Apply same foundation to learning and engagement data:
 
 ---
 
+## Non-Functional Requirements
+
+### Mobile Accessibility
+
+Dashboards must be accessible on mobile devices. Metrics should be available to employees at any time, without requiring access to a desktop workstation. Key requirements:
+
+- All dashboard types (Team, Individual, Company, Custom) must render correctly on mobile screen sizes
+- Individual and Team dashboards are the primary mobile use cases — employees and managers checking their metrics on the go
+- Read-only mobile experience is the minimum requirement; complex configuration (custom dashboards, semantic dictionary editing) may be desktop-only
+- Push notifications for alerts and anomaly signals must support mobile delivery
+
+---
+
 ## Success Criteria
 
 | Metric | Target |
@@ -901,6 +931,25 @@ Apply same foundation to learning and engagement data:
 | AI → Verified promotion | Regular conversion of explorations to reports |
 | At-risk detection (education) | Measurable reduction in undetected cohorts |
 | Intervention outcomes | Improved recovery rates |
+
+## Planned Features & Open Questions
+
+### Cross-Company Anonymous Benchmarking
+
+**Status**: Planned — requires anonymization pipeline and multi-workspace aggregation design.
+
+**Description**: Future capability to aggregate anonymized metrics across workspaces and enable cross-company benchmarking. Example: "Your team's AI tool adoption rate is in the top 20% of similar-size engineering teams across the platform."
+
+**Value**: Organizations can contextualize their own metrics against industry peers without exposing raw data. Portfolio owners can benchmark portfolio companies against external baselines.
+
+**Open Design Questions**:
+- Anonymization pipeline: how to aggregate metrics without exposing individual workspace identity
+- Multi-workspace aggregation: extending the current single-workspace data model to a federated or centralized aggregate store
+- Opt-in/opt-out mechanics: workspace administrators must explicitly consent to participation
+- Statistical minimums: prevent re-identification when a metric is based on very few workspaces (e.g., minimum N=5 workspaces per benchmark bucket)
+- GDPR/data residency: aggregated data must comply with the most restrictive jurisdiction among participating workspaces
+
+---
 
 ## Appendix: Key Terminology
 

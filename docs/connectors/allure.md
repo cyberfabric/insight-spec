@@ -17,7 +17,7 @@ Standalone specification for the Allure TestOps (Quality / Testing) connector. E
 - [Silver / Gold Mappings](#silver-gold-mappings)
 - [Open Questions](#open-questions)
   - [OQ-AL-1: User attribution — no author field in Bronze tables](#oq-al-1-user-attribution-no-author-field-in-bronze-tables)
-  - [OQ-AL-2: `external_issue_id` linking strategy — `class_task_tracker` join](#oq-al-2-externalissueid-linking-strategy-classtasktracker-join)
+  - [OQ-AL-2: `external_issue_id` linking strategy — `class_task_tracker_activities` join](#oq-al-2-externalissueid-linking-strategy-classtasktracker-activities-join)
 
 <!-- /toc -->
 
@@ -37,7 +37,7 @@ Standalone specification for the Allure TestOps (Quality / Testing) connector. E
 
 **Why multiple tables**: Projects → Launches → Test Results → Defects is a genuine 1:N entity hierarchy. A launch has many test results; a defect links many test results. Flattening would repeat launch metadata on every test result row.
 
-**Primary use in Insight**: delivery quality metrics — pass rates, flaky test detection, defect accumulation trends, and linking quality failures to sprint/commit activity. `allure_defects.external_issue_id` enables joining to `class_task_tracker` (YouTrack / Jira tickets).
+**Primary use in Insight**: delivery quality metrics — pass rates, flaky test detection, defect accumulation trends, and linking quality failures to sprint/commit activity. `allure_defects.external_issue_id` enables joining to `class_task_tracker_activities` (YouTrack / Jira tickets). This is a cross-domain JOIN key — Allure does not write to `class_task_tracker_activities`; it only references it at Gold query time.
 
 ---
 
@@ -47,19 +47,19 @@ Standalone specification for the Allure TestOps (Quality / Testing) connector. E
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `launch_id` | bigint | Allure internal launch ID — primary key |
-| `project_id` | bigint | Project this launch belongs to |
-| `name` | text | Launch name, e.g. `Regression Suite - main` |
-| `status` | text | `passed` / `failed` / `broken` / `unknown` |
-| `created_date` | timestamptz | Launch start time |
-| `closed_date` | timestamptz | Launch end time (NULL if running) |
-| `duration_seconds` | numeric | Total run duration |
-| `passed_count` | numeric | Tests passed |
-| `failed_count` | numeric | Tests failed |
-| `broken_count` | numeric | Tests broken (infrastructure/setup failures) |
-| `skipped_count` | numeric | Tests skipped |
-| `total_count` | numeric | Total tests in launch |
-| `tags` | jsonb | Launch tags — environment, branch, build number, CI run ID, etc. |
+| `launch_id` | Int64 | Allure internal launch ID — primary key |
+| `project_id` | Int64 | Project this launch belongs to |
+| `name` | String | Launch name, e.g. `Regression Suite - main` |
+| `status` | String | `passed` / `failed` / `broken` / `unknown` |
+| `created_date` | DateTime64(3) | Launch start time |
+| `closed_date` | DateTime64(3) | Launch end time (NULL if running) |
+| `duration_seconds` | Float64 | Total run duration |
+| `passed_count` | Float64 | Tests passed |
+| `failed_count` | Float64 | Tests failed |
+| `broken_count` | Float64 | Tests broken (infrastructure/setup failures) |
+| `skipped_count` | Float64 | Tests skipped |
+| `total_count` | Float64 | Total tests in launch |
+| `tags` | String | Launch tags — environment, branch, build number, CI run ID, etc. |
 
 `tags` enables correlating launches with git branches and CI build numbers without a direct join to git Bronze tables.
 
@@ -69,18 +69,18 @@ Standalone specification for the Allure TestOps (Quality / Testing) connector. E
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `result_id` | bigint | Allure test result ID — primary key |
-| `launch_id` | bigint | Parent launch — joins to `allure_launches.launch_id` |
-| `test_case_id` | bigint | Test case definition ID — stable across runs (same test in different launches shares this ID) |
-| `test_name` | text | Test case name |
-| `full_path` | text | Suite / class / method path |
-| `status` | text | `passed` / `failed` / `broken` / `skipped` |
-| `duration_seconds` | numeric | Test execution duration |
-| `start_time` | timestamptz | Test start |
-| `stop_time` | timestamptz | Test stop |
-| `flaky` | boolean | Marked as flaky (inconsistent results across runs) |
-| `message` | text | Failure message (NULL if passed) |
-| `trace` | text | Stack trace (NULL if passed) |
+| `result_id` | Int64 | Allure test result ID — primary key |
+| `launch_id` | Int64 | Parent launch — joins to `allure_launches.launch_id` |
+| `test_case_id` | Int64 | Test case definition ID — stable across runs (same test in different launches shares this ID) |
+| `test_name` | String | Test case name |
+| `full_path` | String | Suite / class / method path |
+| `status` | String | `passed` / `failed` / `broken` / `skipped` |
+| `duration_seconds` | Float64 | Test execution duration |
+| `start_time` | DateTime64(3) | Test start |
+| `stop_time` | DateTime64(3) | Test stop |
+| `flaky` | Bool | Marked as flaky (inconsistent results across runs) |
+| `message` | String | Failure message (NULL if passed) |
+| `trace` | String | Stack trace (NULL if passed) |
 
 `test_case_id` is stable across launches — enables tracking a specific test's pass/fail history over time and identifying consistently failing or flaky tests.
 
@@ -90,16 +90,16 @@ Standalone specification for the Allure TestOps (Quality / Testing) connector. E
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `defect_id` | bigint | Allure defect ID — primary key |
-| `project_id` | bigint | Project |
-| `name` | text | Defect name / title |
-| `status` | text | `open` / `resolved` |
-| `created_date` | timestamptz | When the defect was first detected |
-| `closed_date` | timestamptz | When resolved (NULL if open) |
-| `external_issue_id` | text | Linked ticket in YouTrack / Jira, e.g. `PROJ-123` — joins to `class_task_tracker.task_id` |
-| `result_count` | numeric | Number of test results linked to this defect |
+| `defect_id` | Int64 | Allure defect ID — primary key |
+| `project_id` | Int64 | Project |
+| `name` | String | Defect name / title |
+| `status` | String | `open` / `resolved` |
+| `created_date` | DateTime64(3) | When the defect was first detected |
+| `closed_date` | DateTime64(3) | When resolved (NULL if open) |
+| `external_issue_id` | String | Linked ticket in YouTrack / Jira, e.g. `PROJ-123` — cross-domain join key → `class_task_tracker_activities.task_id` (JOIN only; Allure does not write to this stream) |
+| `result_count` | Float64 | Number of test results linked to this defect |
 
-`external_issue_id` is the critical cross-domain link — joins Allure defects to the task tracker (`class_task_tracker`) enabling quality failures to be linked to delivery timeline (sprint, assignee, cycle time).
+`external_issue_id` is the critical cross-domain JOIN key — joins Allure defects to `class_task_tracker_activities` at Gold query time, enabling quality failures to be linked to delivery timeline (sprint, assignee, cycle time). Allure does not write to `class_task_tracker_activities`.
 
 ---
 
@@ -107,16 +107,16 @@ Standalone specification for the Allure TestOps (Quality / Testing) connector. E
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `launches_collected` | numeric | Rows collected for `allure_launches` |
-| `test_results_collected` | numeric | Rows collected for `allure_test_results` |
-| `defects_collected` | numeric | Rows collected for `allure_defects` |
-| `api_calls` | numeric | API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (instance URL, project filter, lookback) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `launches_collected` | Float64 | Rows collected for `allure_launches` |
+| `test_results_collected` | Float64 | Rows collected for `allure_test_results` |
+| `defects_collected` | Float64 | Rows collected for `allure_defects` |
+| `api_calls` | Float64 | API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (instance URL, project filter, lookback) |
 
 Monitoring table — not an analytics source.
 
@@ -127,7 +127,7 @@ Monitoring table — not an analytics source.
 The current Bronze schema has **no user-level identity fields** in `allure_launches`, `allure_test_results`, or `allure_defects`. Test launches are CI/CD artifacts — they are not attributed to individual authors in the Allure TestOps API.
 
 Cross-domain linking in Insight is achieved through:
-- `allure_defects.external_issue_id` → `class_task_tracker.task_id` (defect ↔ ticket)
+- `allure_defects.external_issue_id` → `class_task_tracker_activities.task_id` (defect ↔ ticket, cross-domain JOIN at Gold query time)
 - `allure_launches.tags` (branch, build number) → git Bronze tables (launch ↔ commit)
 
 Person attribution for test failures requires joining through the task tracker: defect → linked ticket → assignee → `person_id`.
@@ -143,7 +143,7 @@ Person attribution for test failures requires joining through the task tracker: 
 | `allure_defects` | `class_quality_defects` | Planned — defect tracking stream |
 
 **Gold**: Quality metrics — pass rate trend, flaky test rate, defect accumulation, MTTR (mean time to resolution for defects). Cross-domain Gold joins:
-- Defect count per sprint (via `external_issue_id` → `class_task_tracker` sprint field)
+- Defect count per sprint (via `external_issue_id` → `class_task_tracker_activities` sprint field)
 - Test pass rate per branch (via `allure_launches.tags.branch` → git commits)
 
 ---
@@ -157,9 +157,9 @@ The Allure TestOps API does not expose which team member triggered a launch or c
 - Does the Allure API expose a `created_by` or `author` field for launches or defects that is not in this spec?
 - If not, should the connector attempt to correlate launches with CI/CD pipeline run metadata (e.g. git commit author) to infer attribution?
 
-### OQ-AL-2: `external_issue_id` linking strategy — `class_task_tracker` join
+### OQ-AL-2: `external_issue_id` linking strategy — `class_task_tracker_activities` join
 
-`allure_defects.external_issue_id` stores ticket IDs like `PROJ-123` that join to `class_task_tracker.task_id`. This linkage depends on:
+`allure_defects.external_issue_id` stores ticket IDs like `PROJ-123` that join to `class_task_tracker_activities.task_id` at Gold query time. This linkage depends on:
 
 - Consistent ticket ID format across Jira and YouTrack instances (same `id_readable` format)
 - Defects being linked to tickets in Allure TestOps (manual process by QA engineers)

@@ -45,33 +45,33 @@ Standalone specification for the Cursor (AI Dev Tool) connector. Expands Source 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `unique` | text | Primary key |
-| `day` | text | Day label |
-| `date` | bigint | Unix timestamp in milliseconds |
-| `email` | text | User email — identity key |
-| `userId` | text | Cursor platform user ID |
-| `isActive` | boolean | Whether user had any activity this day |
-| `chatRequests` | numeric | AI chat interactions |
-| `cmdkUsages` | numeric | Cmd+K (inline edit) usages |
-| `composerRequests` | numeric | Composer feature requests |
-| `agentRequests` | numeric | Agent mode requests |
-| `bugbotUsages` | numeric | Bug bot usages |
-| `totalTabsShown` | numeric | Tab completion suggestions shown |
-| `totalTabsAccepted` | numeric | Tab completions accepted |
-| `totalAccepts` | numeric | All AI suggestions accepted |
-| `totalApplies` | numeric | Code applications (apply to file) |
-| `totalRejects` | numeric | Suggestions rejected |
-| `totalLinesAdded` | numeric | Total lines of code added |
-| `totalLinesDeleted` | numeric | Total lines deleted |
-| `acceptedLinesAdded` | numeric | Lines added from accepted AI suggestions |
-| `acceptedLinesDeleted` | numeric | Lines deleted from accepted AI suggestions |
-| `mostUsedModel` | text | Most used AI model that day, e.g. `claude-3.5-sonnet` |
-| `tabMostUsedExtension` | text | File extension with most tab completions |
-| `applyMostUsedExtension` | text | File extension with most applies |
-| `clientVersion` | text | Cursor IDE version |
-| `subscriptionIncludedReqs` | numeric | Requests covered by subscription |
-| `usageBasedReqs` | numeric | Requests on usage-based billing |
-| `apiKeyReqs` | numeric | Requests using API key |
+| `unique` | String | Primary key |
+| `day` | String | Day label |
+| `date` | Int64 | Unix timestamp in milliseconds |
+| `email` | String | User email — identity key |
+| `userId` | String | Cursor platform user ID |
+| `isActive` | Bool | Whether user had any activity this day |
+| `chatRequests` | Float64 | AI chat interactions |
+| `cmdkUsages` | Float64 | Cmd+K (inline edit) usages |
+| `composerRequests` | Float64 | Composer feature requests |
+| `agentRequests` | Float64 | Agent mode requests |
+| `bugbotUsages` | Float64 | Bug bot usages |
+| `totalTabsShown` | Float64 | Tab completion suggestions shown |
+| `totalTabsAccepted` | Float64 | Tab completions accepted |
+| `totalAccepts` | Float64 | All AI suggestions accepted |
+| `totalApplies` | Float64 | Code applications (apply to file) |
+| `totalRejects` | Float64 | Suggestions rejected |
+| `totalLinesAdded` | Float64 | Total lines of code added |
+| `totalLinesDeleted` | Float64 | Total lines deleted |
+| `acceptedLinesAdded` | Float64 | Lines added from accepted AI suggestions |
+| `acceptedLinesDeleted` | Float64 | Lines deleted from accepted AI suggestions |
+| `mostUsedModel` | String | Most used AI model that day, e.g. `claude-3.5-sonnet` |
+| `tabMostUsedExtension` | String | File extension with most tab completions |
+| `applyMostUsedExtension` | String | File extension with most applies |
+| `clientVersion` | String | Cursor IDE version |
+| `subscriptionIncludedReqs` | Float64 | Requests covered by subscription |
+| `usageBasedReqs` | Float64 | Requests on usage-based billing |
+| `apiKeyReqs` | Float64 | Requests using API key |
 
 ---
 
@@ -79,17 +79,17 @@ Standalone specification for the Cursor (AI Dev Tool) connector. Expands Source 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `unique` | text | Primary key |
-| `userEmail` | text | User email — identity key |
-| `timestamp` | timestamptz | Event timestamp |
-| `kind` | text | Event type: `chat`, `completion`, `agent`, `cmd-k`, etc. |
-| `model` | text | AI model used, e.g. `gpt-4o`, `claude-3.5-sonnet` |
-| `maxMode` | boolean | Whether max mode was enabled |
-| `isChargeable` | boolean | Whether event incurs billing |
-| `requestsCosts` | numeric | Request cost in credits |
-| `cursorTokenFee` | numeric | Cursor platform fee |
-| `isTokenBasedCall` | boolean | Billed by tokens vs per-request |
-| `isHeadless` | boolean | Triggered without UI (automated) |
+| `unique` | String | Primary key |
+| `userEmail` | String | User email — identity key |
+| `timestamp` | DateTime64(3) | Event timestamp |
+| `kind` | String | Event type: `chat`, `completion`, `agent`, `cmd-k`, etc. |
+| `model` | String | AI model used, e.g. `gpt-4o`, `claude-3.5-sonnet` |
+| `maxMode` | Bool | Whether max mode was enabled |
+| `isChargeable` | Bool | Whether event incurs billing |
+| `requestsCosts` | Float64 | Request cost in credits |
+| `cursorTokenFee` | Float64 | Cursor platform fee |
+| `isTokenBasedCall` | Bool | Billed by tokens vs per-request |
+| `isHeadless` | Bool | Triggered without UI (automated) |
 
 ---
 
@@ -97,13 +97,13 @@ Standalone specification for the Cursor (AI Dev Tool) connector. Expands Source 
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `event_unique` | text | Parent event reference — joins to `cursor_events.unique` |
-| `inputTokens` | numeric | Tokens in the prompt |
-| `outputTokens` | numeric | Tokens in the model response |
-| `cacheReadTokens` | numeric | Tokens served from prompt cache |
-| `cacheWriteTokens` | numeric | Tokens written to cache |
-| `totalCents` | numeric | Total cost in cents |
-| `discountPercentOff` | numeric | Discount applied |
+| `event_unique` | String | Parent event reference — joins to `cursor_events.unique` |
+| `inputTokens` | Float64 | Tokens in the prompt |
+| `outputTokens` | Float64 | Tokens in the model response |
+| `cacheReadTokens` | Float64 | Tokens served from prompt cache |
+| `cacheWriteTokens` | Float64 | Tokens written to cache |
+| `totalCents` | Float64 | Total cost in cents |
+| `discountPercentOff` | Float64 | Discount applied |
 
 All fields nullable — not all events have token-level detail. This table exists as a separate entity to avoid NULLs in the main events table.
 
@@ -113,16 +113,16 @@ All fields nullable — not all events have token-level detail. This table exist
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `daily_usage_records_collected` | numeric | Rows collected for `cursor_daily_usage` |
-| `events_collected` | numeric | Rows collected for `cursor_events` |
-| `token_records_collected` | numeric | Rows collected for `cursor_events_token_usage` |
-| `api_calls` | numeric | API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (team, lookback period) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `daily_usage_records_collected` | Float64 | Rows collected for `cursor_daily_usage` |
+| `events_collected` | Float64 | Rows collected for `cursor_events` |
+| `token_records_collected` | Float64 | Rows collected for `cursor_events_token_usage` |
+| `api_calls` | Float64 | API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (team, lookback period) |
 
 Monitoring table — not an analytics source.
 

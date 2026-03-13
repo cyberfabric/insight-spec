@@ -52,14 +52,14 @@ No per-user token counts or per-user daily metrics exist in the standard API.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `user_login` | text | GitHub login of the seat holder |
-| `user_email` | text | Email (from linked GitHub account) — identity resolution key |
-| `plan_type` | text | `business` / `enterprise` |
-| `pending_cancellation_date` | date | If seat is scheduled for cancellation (NULL otherwise) |
-| `last_activity_at` | timestamptz | Last recorded Copilot activity across all editors |
-| `last_activity_editor` | text | Editor used in last activity, e.g. `vscode`, `jetbrains` |
-| `created_at` | timestamptz | When the seat was assigned |
-| `updated_at` | timestamptz | Last seat record update |
+| `user_login` | String | GitHub login of the seat holder |
+| `user_email` | String | Email (from linked GitHub account) — identity resolution key |
+| `plan_type` | String | `business` / `enterprise` |
+| `pending_cancellation_date` | Date | If seat is scheduled for cancellation (NULL otherwise) |
+| `last_activity_at` | DateTime64(3) | Last recorded Copilot activity across all editors |
+| `last_activity_editor` | String | Editor used in last activity, e.g. `vscode`, `jetbrains` |
+| `created_at` | DateTime64(3) | When the seat was assigned |
+| `updated_at` | DateTime64(3) | Last seat record update |
 
 One row per user. `last_activity_at` is the only per-user usage signal available in the Copilot API.
 
@@ -69,15 +69,15 @@ One row per user. `last_activity_at` is the only per-user usage signal available
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `date` | date | Usage date — primary key |
-| `total_suggestions_count` | numeric | Code completion suggestions shown |
-| `total_acceptances_count` | numeric | Suggestions accepted (tab) |
-| `total_lines_suggested` | numeric | Lines of code suggested |
-| `total_lines_accepted` | numeric | Lines of code accepted |
-| `total_active_users` | numeric | Users with at least one completion interaction |
-| `total_chat_turns` | numeric | Copilot Chat interactions (IDE + github.com) |
-| `total_chat_acceptances` | numeric | Code blocks accepted from chat |
-| `total_active_chat_users` | numeric | Users who used Copilot Chat |
+| `date` | Date | Usage date — primary key |
+| `total_suggestions_count` | Float64 | Code completion suggestions shown |
+| `total_acceptances_count` | Float64 | Suggestions accepted (tab) |
+| `total_lines_suggested` | Float64 | Lines of code suggested |
+| `total_lines_accepted` | Float64 | Lines of code accepted |
+| `total_active_users` | Float64 | Users with at least one completion interaction |
+| `total_chat_turns` | Float64 | Copilot Chat interactions (IDE + github.com) |
+| `total_chat_acceptances` | Float64 | Code blocks accepted from chat |
+| `total_active_chat_users` | Float64 | Users who used Copilot Chat |
 
 Org-level only — no per-user breakdown. Enables trend analysis of overall adoption without individual attribution.
 
@@ -87,14 +87,14 @@ Org-level only — no per-user breakdown. Enables trend analysis of overall adop
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `date` | date | Usage date |
-| `language` | text | Programming language, e.g. `python`, `typescript`, `go` |
-| `editor` | text | Editor, e.g. `vscode`, `jetbrains`, `neovim`, `vim`, `xcode` |
-| `suggestions_count` | numeric | Suggestions shown for this language × editor |
-| `acceptances_count` | numeric | Suggestions accepted |
-| `lines_suggested` | numeric | Lines suggested |
-| `lines_accepted` | numeric | Lines accepted |
-| `active_users` | numeric | Active users for this language × editor combination |
+| `date` | Date | Usage date |
+| `language` | String | Programming language, e.g. `python`, `typescript`, `go` |
+| `editor` | String | Editor, e.g. `vscode`, `jetbrains`, `neovim`, `vim`, `xcode` |
+| `suggestions_count` | Float64 | Suggestions shown for this language × editor |
+| `acceptances_count` | Float64 | Suggestions accepted |
+| `lines_suggested` | Float64 | Lines suggested |
+| `lines_accepted` | Float64 | Lines accepted |
+| `active_users` | Float64 | Active users for this language × editor combination |
 
 One row per `(date, language, editor)`. Enables analysis of adoption by editor and language without per-user resolution.
 
@@ -104,16 +104,16 @@ One row per `(date, language, editor)`. Enables analysis of adoption by editor a
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `seats_collected` | numeric | Rows collected for `copilot_seats` |
-| `usage_records_collected` | numeric | Rows collected for `copilot_usage` |
-| `breakdown_records_collected` | numeric | Rows collected for `copilot_usage_breakdown` |
-| `api_calls` | numeric | API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (org, lookback period) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `seats_collected` | Float64 | Rows collected for `copilot_seats` |
+| `usage_records_collected` | Float64 | Rows collected for `copilot_usage` |
+| `breakdown_records_collected` | Float64 | Rows collected for `copilot_usage_breakdown` |
+| `api_calls` | Float64 | API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (org, lookback period) |
 
 Monitoring table — not an analytics source.
 
@@ -133,11 +133,10 @@ Only `copilot_seats` has user-level data. `user_email` is the primary identity k
 
 | Bronze table | Silver target | Status |
 |-------------|--------------|--------|
-| `copilot_seats` | *(seat roster — activity signal only)* | Available — `last_activity_at` is the only per-user metric |
-| `copilot_usage` | `class_ai_dev_usage` (org-level rows) | Planned — org-level aggregate, no `person_id` |
-| `copilot_usage_breakdown` | *(org analytics)* | Available — language/editor adoption, no Silver target yet |
+| `copilot_seats` | `class_ai_dev_usage` | Planned — `last_activity_at` as binary active signal (no completions metrics) |
+| `copilot_usage` + `copilot_usage_breakdown` | `class_ai_org_usage` | Planned — org-level aggregates, no `person_id`; keyed by `(workspace_id, date, tool)` |
 
-**Gold**: GitHub Copilot adoption metrics (active users trend, acceptance rate, lines accepted per day, editor/language distribution). Per-user Gold metrics are not possible from Copilot API data alone — only the seat roster's `last_activity_at` provides any per-user signal.
+**Gold**: GitHub Copilot adoption metrics (active users trend, acceptance rate, lines accepted per day, editor/language distribution) read from Silver `class_ai_org_usage`. Per-user activity signal (binary active/inactive per period) read from Silver `class_ai_dev_usage`. Gold never reads Bronze directly.
 
 ---
 
@@ -150,9 +149,7 @@ GitHub Copilot does not expose per-user daily usage. When building `class_ai_dev
 - Cursor and Windsurf contribute per-user daily rows with acceptance rates, lines added, etc.
 - Copilot can only contribute org-level aggregate rows and seat-level last-activity timestamps.
 
-- Should `class_ai_dev_usage` allow org-level rows (with `person_id = NULL`)?
-- Or should Copilot aggregate data go into a separate `class_ai_org_usage` stream?
-- Is `copilot_seats.last_activity_at` sufficient as a "user was active" signal for per-user Gold metrics?
+**CLOSED.** `class_ai_org_usage` Silver stream IS created for org-level GitHub Copilot data. Rationale: Bronze data cannot be read directly at Gold level — Identity Resolution has not run on Bronze, and `workspace_id` isolation is enforced at Silver. `copilot_usage` and `copilot_usage_breakdown` feed into `class_ai_org_usage` (keyed by `workspace_id + date + tool`, no `person_id`). For per-user data: `copilot_seats.last_activity_at` feeds into `class_ai_dev_usage` as a binary activity signal (no completions metrics).
 
 ### OQ-COP-2: `last_activity_at` as a proxy for active usage
 

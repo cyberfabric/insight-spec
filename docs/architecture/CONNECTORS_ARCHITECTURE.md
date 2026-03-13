@@ -6,6 +6,30 @@
 
 This document describes the connector architecture for the Metrics Layer — the data collection and normalization subsystem of the Insight platform. The architecture is designed to support multiple data sources while maintaining a unified data model and enabling easy addition of new connectors.
 
+## Connector Ecosystem Strategy
+
+Self-service connector authoring is a strategic priority, not merely a technical option. With 2,000+ potential Cyber Fabric customers each using different tooling stacks, requiring the Constructor/Cyber Fabric team to build every new connector creates a permanent bottleneck that scales poorly with customer growth.
+
+The platform supports three connector authorship tiers:
+
+| Tier | Author | Maintenance | Examples |
+|------|--------|-------------|---------|
+| **First-party connectors** | Constructor / Cyber Fabric engineering | Fully maintained by platform team | GitLab, YouTrack, BambooHR, M365, Zulip |
+| **Community connectors** | Open-source contributors | Community-maintained, reviewed by platform team | Bitbucket, Linear, custom HR systems |
+| **Self-service connectors** | Customers writing their own | Customer-owned; platform provides SDK and validation | Internal proprietary tools, niche SaaS products |
+
+**Connector SDK / Public Spec**: The 10-step connector checklist defined in this document (see [Adding a New Connector](#3-adding-a-new-connector)) already encodes the connector contract. This checklist should be formalized as a public SDK specification — a versioned, documented interface that external developers can implement independently without access to platform internals. Key SDK components:
+
+- `connector.yaml` manifest schema (versioned, validated)
+- Base connector class (`base_connector.py`) published as a library
+- Unifier schema registry with documented extension points
+- Local development harness for testing connectors against mock ClickHouse
+- Connector validation CLI (checks contract compliance before submission)
+
+This enables customers to integrate proprietary internal tools without waiting for vendor roadmap inclusion.
+
+---
+
 ## High-Level Architecture
 
 ```
@@ -245,6 +269,30 @@ The system supports an extensible set of domains. Each domain defines a set of u
 | **organization** | person, functional_team, department, hierarchy | Identity, Org Structure, Cohort | BambooHR, Workday, LDAP |
 | **ai_tools** | ai_session, prompt, completion | AI Leverage, Automation | MCP, Cursor, Copilot |
 | **quality** | test_result, coverage, incident | Stability, Quality | Allure, Sentry |
+| **endpoint_activity** | keystroke_session, app_session, screen_session | Focus Time, Deep Work, Application Usage | *Planned — see below* |
+
+#### Planned Domain: Endpoint Activity
+
+**Status**: Planned. Compliance framework required before implementation.
+
+**Collection model**: Push-based (agent installed on employee endpoint), not Pull (API polling). An agent running on the employee's workstation or mobile device records activity locally and streams aggregated events to the platform.
+
+**Data collected**:
+- Keystroke activity (aggregate counts — not content; not keylogging)
+- Active application time (per-application session duration)
+- Screen-on / screen-off time (presence signal)
+
+**Why this matters**: Endpoint activity is the only source that captures deep work and focus time independently of code commits or task updates. It provides a ground-truth presence signal that complements all other productivity metrics.
+
+**Privacy and compliance requirements** (must be resolved before implementation):
+- Explicit, documented employee consent is mandatory — no silent collection
+- GDPR compliance required (Article 6 lawful basis; Article 88 employment data)
+- Compliance varies significantly by country and jurisdiction — some EU countries (e.g., Germany, France) have codetermination requirements (works council approval)
+- Granularity limits: only aggregate time-window summaries stored; raw keystroke sequences never retained
+- Opt-out mechanism: employees must be able to pause collection at any time
+- Data residency: endpoint data must remain within the employee's legal jurisdiction
+
+**Implementation gate**: This connector category will not be implemented until a formal compliance framework has been reviewed and approved by legal counsel across all target deployment jurisdictions.
 
 ### Extensibility Model
 
@@ -451,6 +499,17 @@ connectors/
 4. **Error Isolation**: One connector failure should not affect others
 5. **Rate Limiting**: Respect source system rate limits; implement exponential backoff
 
+### Principle: Bronze is never queried at Gold level
+
+All data must pass through the Silver layer before reaching Gold. This is a hard constraint, not a recommendation:
+
+- Bronze tables contain raw source data with source-native identifiers — `person_id` has not been assigned at Bronze level
+- Identity Resolution runs in the Bronze→Silver ETL step only
+- Workspace isolation (`workspace_id`) is guaranteed only at Silver and above
+- Gold queries exclusively read from Silver `class_*` tables
+
+For data that cannot be attributed to an individual person (e.g. org-level aggregates, anonymous usage counters), a Silver stream still exists — it is keyed by `(workspace_id, date)` or `(workspace_id, source_instance_id, date)` without `person_id`. The `class_ai_org_usage` table is the canonical example of this pattern: org-level GitHub Copilot usage aggregates are promoted to Silver so Gold can apply workspace isolation and query them through the standard Silver interface.
+
 ### 3. Adding a New Connector
 
 1. **Create connector manifest** (`connector.yaml`) — define source, endpoints, capabilities
@@ -548,6 +607,83 @@ The connector layer automatically populates the Data Catalog with both technical
 5. **Analyst Enrichment**: Business analysts add thresholds, patterns, custom context
 6. **Activation**: Metrics become available in dashboards and AI queries
 
+## Cross-Domain Joins
+
+Some connectors do not write to a Silver stream — instead they produce reference tables that JOIN to Silver streams from other domains at Gold query time. This is distinct from a Silver target.
+
+**Examples**:
+- `git_tickets` / `*_ticket_refs` — parse ticket IDs from commit messages and PR titles/descriptions; join to `class_task_tracker_activities.task_id` to compute cycle time (ticket created → commit merged)
+- `allure_defects.external_issue_id` — link test defects to tracker tickets; join to `class_task_tracker_activities` to correlate quality failures with sprint/delivery data
+
+**Rule**: If a table's purpose is to enable a JOIN rather than to produce a row in a Silver stream, mark it as `Cross-domain join → {target}.{key}` in the Silver/Gold Mappings table, NOT as a Silver target.
+
+---
+
+## Custom Fields Pattern
+
+Many source systems (YouTrack, Jira, BambooHR, Workday, HubSpot, Salesforce, Zendesk, JSM) support workspace-specific custom fields that cannot be predicted at schema design time. The platform handles these via a two-layer extensibility pattern:
+
+### Bronze: `_ext` key-value table
+
+Every connector that ingests objects with custom fields MUST produce a companion `{source}_{entity}_ext` table using the key-value pattern:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source_instance_id` | String | Connector instance identifier |
+| `entity_id` | String | Parent entity key (e.g. `id_readable`, `employee_id`, `ticket_id`) |
+| `field_id` | String | Custom field machine ID or API key |
+| `field_name` | String | Custom field display name (e.g. `Team`, `Squad`, `Customer`, `Division`) |
+| `field_value` | String | Field value as string; JSON for complex types |
+| `value_type` | String | Type hint: `string` / `number` / `user` / `enum` / `json` |
+| `collected_at` | DateTime64(3) | Collection timestamp |
+| `data_source` | String | Source discriminator |
+| `_version` | UInt64 | Deduplication version |
+
+**Purpose**: captures any custom field without schema changes. The connector discovers available custom fields via the source API (e.g. `GET /rest/api/3/field` for Jira, `GET /api/admin/customFields` for YouTrack, custom properties endpoint for HubSpot) and writes one row per field value per entity.
+
+### Silver: `Map(String, String)` + `Map(String, Float64)` columns
+
+All Silver unified tables that represent entities with potential custom fields MUST include two Map columns:
+
+```
+custom_str_attrs  Map(String, String)   -- workspace-specific string attributes
+custom_num_attrs  Map(String, Float64)  -- workspace-specific numeric attributes
+```
+
+During Silver Step 1 (Bronze → unified schema), the ETL reads a per-workspace **Custom Attributes Configuration** that declares which `field_name` values from `_ext` tables should be promoted and whether each is string or numeric. Only configured fields are promoted — all others remain queryable via the Bronze `_ext` table.
+
+**Example configuration**:
+```yaml
+# workspace: acme-corp
+# source: youtrack
+custom_fields:
+  - field_name: "Squad"
+    target_key: "squad"
+    type: string
+  - field_name: "Customer"
+    target_key: "customer"
+    type: string
+  - field_name: "Story Points Actual"
+    target_key: "sp_actual"
+    type: number
+```
+
+**Result in Silver**: `custom_str_attrs = {'squad': 'Platform', 'customer': 'Acme'}`, `custom_num_attrs = {'sp_actual': 3.0}`
+
+**HR exception**: `class_people` uses this pattern natively — `custom_str_attrs` and `custom_num_attrs` are populated directly from BambooHR/Workday custom employee fields without a Bronze `_ext` table (HR systems expose custom fields in the main employee response).
+
+### Domains and applicable tables
+
+| Domain | Bronze `_ext` tables | Silver Map columns |
+|--------|---------------------|-------------------|
+| Task Tracking | `task_tracker_issue_ext` (from `youtrack_issue_ext`, `jira_issue_ext`) | `task_tracker_issues.custom_str_attrs` / `custom_num_attrs` |
+| CRM | `hubspot_contact_ext`, `hubspot_deal_ext`, `salesforce_opportunity_ext`, `salesforce_contact_ext` | `crm_deals.custom_str_attrs` / `custom_num_attrs` |
+| Support | `zendesk_ticket_ext`, `jsm_ticket_ext` | `support_tickets.custom_str_attrs` / `custom_num_attrs` |
+| HR | *(no Bronze ext — custom fields in main response)* | `class_people.custom_str_attrs` / `custom_num_attrs` ✓ |
+| Git | `git_repositories_ext`, `git_commits_ext`, `git_pull_requests_ext` | *(no Maps — git objects have no custom fields)* |
+
+---
+
 ## Security Considerations
 
 1. **Credential Management**: All secrets via environment variables or secret manager
@@ -561,4 +697,4 @@ The connector layer automatically populates the Data Catalog with both technical
 ## References
 
 - [PRODUCT_SPECIFICATION.md](./PRODUCT_SPECIFICATION.md) — Full product specification
-- [Vision.md](./Vision.md) — Product vision document
+- [PRODUCT_SPECIFICATION.md](./PRODUCT_SPECIFICATION.md) — Product vision document

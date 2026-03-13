@@ -52,12 +52,12 @@ Standalone specification for the ChatGPT Team (AI Tool) connector. Expands Sourc
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `user_id` | text | OpenAI platform user ID |
-| `email` | text | User email — primary key for cross-system identity resolution |
-| `role` | text | `owner` / `admin` / `member` |
-| `status` | text | `active` / `inactive` / `pending` |
-| `added_at` | timestamptz | When the seat was assigned |
-| `last_active_at` | timestamptz | Last recorded activity |
+| `user_id` | String | OpenAI platform user ID |
+| `email` | String | User email — primary key for cross-system identity resolution |
+| `role` | String | `owner` / `admin` / `member` |
+| `status` | String | `active` / `inactive` / `pending` |
+| `added_at` | DateTime64(3) | When the seat was assigned |
+| `last_active_at` | DateTime64(3) | Last recorded activity |
 
 One row per user. Current-state only — no versioning.
 
@@ -67,16 +67,16 @@ One row per user. Current-state only — no versioning.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `user_id` | text | OpenAI platform user ID |
-| `email` | text | User email — identity key |
-| `date` | date | Activity date |
-| `client` | text | `web` / `desktop` / `mobile` |
-| `model` | text | Model used, e.g. `gpt-4o`, `o1`, `o3-mini` |
-| `conversation_count` | numeric | Number of distinct conversations |
-| `message_count` | numeric | Messages sent |
-| `input_tokens` | numeric | Input tokens consumed |
-| `output_tokens` | numeric | Output tokens generated |
-| `reasoning_tokens` | numeric | Reasoning tokens (o1/o3 models only; billed but not in output) |
+| `user_id` | String | OpenAI platform user ID |
+| `email` | String | User email — identity key |
+| `date` | Date | Activity date |
+| `client` | String | `web` / `desktop` / `mobile` |
+| `model` | String | Model used, e.g. `gpt-4o`, `o1`, `o3-mini` |
+| `conversation_count` | Float64 | Number of distinct conversations |
+| `message_count` | Float64 | Messages sent |
+| `input_tokens` | Float64 | Input tokens consumed |
+| `output_tokens` | Float64 | Output tokens generated |
+| `reasoning_tokens` | Float64 | Reasoning tokens (o1/o3 models only; billed but not in output) |
 
 No `cost_cents` — flat subscription.
 
@@ -88,15 +88,15 @@ No `cost_cents` — flat subscription.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `seats_collected` | numeric | Rows collected for `chatgpt_team_seats` |
-| `activity_records_collected` | numeric | Rows collected for `chatgpt_team_activity` |
-| `api_calls` | numeric | Admin API calls made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (workspace, lookback period) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `seats_collected` | Float64 | Rows collected for `chatgpt_team_seats` |
+| `activity_records_collected` | Float64 | Rows collected for `chatgpt_team_activity` |
+| `api_calls` | Float64 | Admin API calls made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (workspace, lookback period) |
 
 Monitoring table — not an analytics source.
 
@@ -127,8 +127,7 @@ Monitoring table — not an analytics source.
 
 A developer may use both ChatGPT Team (via web/desktop) and the OpenAI API (programmatic calls). The same person generates usage in both.
 
-- Should `class_ai_tool_usage` (conversational) and `class_ai_api_usage` (programmatic) be kept separate?
-- Or should there be a unified `class_ai_usage` that merges all OpenAI + Anthropic product usage by `person_id`?
+**CLOSED.** `class_ai_tool_usage` (conversational) and `class_ai_api_usage` (programmatic) are kept as separate Silver streams. They serve different analytics purposes: `class_ai_tool_usage` measures AI assistant adoption (chat interactions, seat utilization), while `class_ai_api_usage` measures programmatic API spend and throughput. A unified `class_ai_usage` stream will NOT be created — three separate streams are maintained: `class_ai_dev_usage` (IDE/coding tools), `class_ai_api_usage` (programmatic API), and `class_ai_tool_usage` (chat/assistant tools). Cross-stream analysis by `person_id` can be performed at Gold level without collapsing the Silver schemas.
 
 ### OQ-CGT-2: Parallel to Claude Team — unified Silver stream
 
