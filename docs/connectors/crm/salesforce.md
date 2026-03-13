@@ -14,6 +14,8 @@ Standalone specification for the Salesforce (CRM) connector. Expands Source 17 i
   - [`salesforce_opportunities` — Deal pipeline records](#salesforceopportunities-deal-pipeline-records)
   - [`salesforce_activities` — Tasks and Events](#salesforceactivities-tasks-and-events)
   - [`salesforce_users` — User directory](#salesforceusers-user-directory)
+  - [`salesforce_opportunity_ext` — Custom opportunity fields (key-value)](#salesforce_opportunity_ext--custom-opportunity-fields-key-value)
+  - [`salesforce_contact_ext` — Custom contact fields (key-value)](#salesforce_contact_ext--custom-contact-fields-key-value)
   - [`salesforce_collection_runs` — Connector execution log](#salesforcecollectionruns-connector-execution-log)
 - [Identity Resolution](#identity-resolution)
 - [Silver / Gold Mappings](#silver-gold-mappings)
@@ -60,16 +62,16 @@ Standalone specification for the Salesforce (CRM) connector. Expands Source 17 i
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `contact_id` | text | Salesforce 18-char ID |
-| `email` | text | Primary email — CRM contact email (external customer) |
-| `first_name` | text | First name |
-| `last_name` | text | Last name |
-| `title` | text | Job title |
-| `account_id` | text | Associated Account (company) ID — joins to `salesforce_accounts.account_id` |
-| `owner_id` | text | Record owner (salesperson) Salesforce ID — joins to `salesforce_users.user_id` |
-| `lead_source` | text | Lead origin |
-| `created_date` | timestamptz | Record creation |
-| `last_modified_date` | timestamptz | Last update — cursor for incremental sync |
+| `contact_id` | String | Salesforce 18-char ID |
+| `email` | String | Primary email — CRM contact email (external customer) |
+| `first_name` | String | First name |
+| `last_name` | String | Last name |
+| `title` | String | Job title |
+| `account_id` | String | Associated Account (company) ID — joins to `salesforce_accounts.account_id` |
+| `owner_id` | String | Record owner (salesperson) Salesforce ID — joins to `salesforce_users.user_id` |
+| `lead_source` | String | Lead origin |
+| `created_date` | DateTime64(3) | Record creation |
+| `last_modified_date` | DateTime64(3) | Last update — cursor for incremental sync |
 
 ---
 
@@ -77,15 +79,15 @@ Standalone specification for the Salesforce (CRM) connector. Expands Source 17 i
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `account_id` | text | Salesforce 18-char ID |
-| `name` | text | Account name |
-| `website` | text | Website URL |
-| `industry` | text | Industry |
-| `type` | text | `Customer` / `Partner` / `Prospect` / etc. |
-| `owner_id` | text | Account owner ID — joins to `salesforce_users.user_id` |
-| `parent_account_id` | text | Parent account for hierarchies (NULL for root) |
-| `created_date` | timestamptz | Record creation |
-| `last_modified_date` | timestamptz | Last update |
+| `account_id` | String | Salesforce 18-char ID |
+| `name` | String | Account name |
+| `website` | String | Website URL |
+| `industry` | String | Industry |
+| `type` | String | `Customer` / `Partner` / `Prospect` / etc. |
+| `owner_id` | String | Account owner ID — joins to `salesforce_users.user_id` |
+| `parent_account_id` | String | Parent account for hierarchies (NULL for root) |
+| `created_date` | DateTime64(3) | Record creation |
+| `last_modified_date` | DateTime64(3) | Last update |
 
 ---
 
@@ -93,19 +95,19 @@ Standalone specification for the Salesforce (CRM) connector. Expands Source 17 i
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `opportunity_id` | text | Salesforce 18-char ID |
-| `name` | text | Opportunity name |
-| `stage_name` | text | Current stage, e.g. `Prospecting` / `Closed Won` / `Closed Lost` |
-| `amount` | numeric | Opportunity amount |
-| `close_date` | date | Expected or actual close date |
-| `probability` | numeric | Win probability (0–100) |
-| `owner_id` | text | Opportunity owner ID — joins to `salesforce_users.user_id` |
-| `account_id` | text | Associated account |
-| `lead_source` | text | Lead origin |
-| `is_closed` | boolean | Whether the opportunity is closed |
-| `is_won` | boolean | Whether the outcome was a win |
-| `created_date` | timestamptz | Record creation |
-| `last_modified_date` | timestamptz | Last update |
+| `opportunity_id` | String | Salesforce 18-char ID |
+| `name` | String | Opportunity name |
+| `stage_name` | String | Current stage, e.g. `Prospecting` / `Closed Won` / `Closed Lost` |
+| `amount` | Float64 | Opportunity amount |
+| `close_date` | Date | Expected or actual close date |
+| `probability` | Float64 | Win probability (0–100) |
+| `owner_id` | String | Opportunity owner ID — joins to `salesforce_users.user_id` |
+| `account_id` | String | Associated account |
+| `lead_source` | String | Lead origin |
+| `is_closed` | Bool | Whether the opportunity is closed |
+| `is_won` | Bool | Whether the outcome was a win |
+| `created_date` | DateTime64(3) | Record creation |
+| `last_modified_date` | DateTime64(3) | Last update |
 
 ---
 
@@ -115,18 +117,21 @@ Salesforce stores Tasks and Events as separate objects. This table merges both w
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `activity_id` | text | Salesforce 18-char ID |
-| `activity_type` | text | `Task` / `Event` |
-| `subject` | text | Activity subject / title |
-| `owner_id` | text | Activity owner — joins to `salesforce_users.user_id` |
-| `who_id` | text | Contact or Lead associated (nullable) |
-| `what_id` | text | Related object — Opportunity, Account, etc. (nullable) |
-| `activity_date` | date | Due date (Task) or start date (Event) |
-| `duration_minutes` | numeric | Duration in minutes (Events only; NULL for Tasks) |
-| `status` | text | Task status: `Not Started` / `Completed` / etc. (NULL for Events) |
-| `call_type` | text | `Inbound` / `Outbound` (calls only; NULL otherwise) |
-| `call_duration_seconds` | numeric | Call duration (calls only; NULL otherwise) |
-| `created_date` | timestamptz | Record creation |
+| `activity_id` | String | Salesforce 18-char ID |
+| `activity_type` | String | `Task` / `Event` |
+| `subject` | String | Activity subject / title |
+| `owner_id` | String | Activity owner — joins to `salesforce_users.user_id` |
+| `who_id` | String | Contact or Lead associated (nullable) |
+| `what_id` | String | Related object — Opportunity, Account, etc. (nullable) |
+| `activity_date` | Date | Due date for Tasks (`ActivityDate`); NULL for Events |
+| `activity_datetime` | DateTime64(3) | Start datetime for Events (`StartDateTime`); NULL for Tasks |
+| `duration_minutes` | Float64 | Duration in minutes (`DurationInMinutes`) — Events only; NULL for Tasks |
+| `status` | String | Task status: `Not Started` / `In Progress` / `Completed` / etc. (`Status`) — NULL for Events |
+| `call_type` | String | `Inbound` / `Outbound` / `Internal` (`CallType`) — call-logged Tasks only; NULL otherwise |
+| `call_duration_seconds` | Float64 | Call duration in seconds (`CallDurationInSeconds`) — call-logged Tasks only; NULL otherwise |
+| `created_date` | DateTime64(3) | Record creation |
+
+**Note**: Tasks and Events have different date fields — Tasks use `ActivityDate` (date only), Events use `StartDateTime` (datetime). Both are collected via SOQL: `SELECT ... FROM Task` and `SELECT ... FROM Event` separately, merged here with `activity_type` discriminator.
 
 ---
 
@@ -134,16 +139,50 @@ Salesforce stores Tasks and Events as separate objects. This table merges both w
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `user_id` | text | Salesforce 18-char user ID — joins to `owner_id` in other tables |
-| `email` | text | Email — identity resolution key for internal salespeople |
-| `first_name` | text | First name |
-| `last_name` | text | Last name |
-| `title` | text | Job title |
-| `department` | text | Department |
-| `profile` | text | Salesforce profile (permission level) |
-| `is_active` | boolean | Whether the user account is active |
+| `user_id` | String | Salesforce 18-char user ID — joins to `owner_id` in other tables |
+| `email` | String | Email — identity resolution key for internal salespeople |
+| `first_name` | String | First name |
+| `last_name` | String | Last name |
+| `title` | String | Job title |
+| `department` | String | Department |
+| `profile` | String | Salesforce profile name (`Profile.Name`) — requires JOIN in SOQL: `SELECT Profile.Name FROM User` |
+| `is_active` | Bool | Whether the user account is active |
 
 Identity anchor for all salesperson-owned Salesforce objects.
+
+---
+
+### `salesforce_opportunity_ext` — Custom opportunity fields (key-value)
+
+Salesforce supports custom fields (`__c` suffix) on Opportunity objects. Collected from any `customfield_*` or `*__c` field in the SOQL query response that is not part of the core `salesforce_opportunities` schema.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `opportunity_id` | String | Parent opportunity ID — joins to `salesforce_opportunities.opportunity_id` |
+| `field_api_name` | String | Salesforce API field name, e.g. `Customer_Segment__c` |
+| `field_label` | String | Salesforce field label (display name) |
+| `field_value` | String | Field value as string |
+| `value_type` | String | Type hint: `string` / `number` / `enumeration` / `date` / `json` |
+| `collected_at` | DateTime64(3) | Collection timestamp |
+
+**Discovery**: custom field metadata available via `GET /services/data/v{version}/sobjects/Opportunity/describe` — returns all field definitions including custom fields. Only fields with non-null values are written as rows.
+
+---
+
+### `salesforce_contact_ext` — Custom contact fields (key-value)
+
+Same pattern for Contact custom fields (`__c` suffix). Collected from any `*__c` field in the SOQL Contact query response that is not part of the core `salesforce_contacts` schema.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `contact_id` | String | Parent contact ID — joins to `salesforce_contacts.contact_id` |
+| `field_api_name` | String | Salesforce API field name, e.g. `Customer_Tier__c` |
+| `field_label` | String | Salesforce field label (display name) |
+| `field_value` | String | Field value as string |
+| `value_type` | String | Type hint: `string` / `number` / `enumeration` / `date` / `json` |
+| `collected_at` | DateTime64(3) | Collection timestamp |
+
+**Discovery**: `GET /services/data/v{version}/sobjects/Contact/describe` — returns all field definitions including custom fields.
 
 ---
 
@@ -151,18 +190,18 @@ Identity anchor for all salesperson-owned Salesforce objects.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `run_id` | text | Unique run identifier |
-| `started_at` | timestamp | Run start time |
-| `completed_at` | timestamp | Run end time |
-| `status` | text | `running` / `completed` / `failed` |
-| `contacts_collected` | numeric | Rows collected for `salesforce_contacts` |
-| `accounts_collected` | numeric | Rows collected for `salesforce_accounts` |
-| `opportunities_collected` | numeric | Rows collected for `salesforce_opportunities` |
-| `activities_collected` | numeric | Rows collected for `salesforce_activities` |
-| `users_collected` | numeric | Rows collected for `salesforce_users` |
-| `api_calls` | numeric | API / SOQL queries made |
-| `errors` | numeric | Errors encountered |
-| `settings` | jsonb | Collection configuration (instance URL, object types, lookback) |
+| `run_id` | String | Unique run identifier |
+| `started_at` | DateTime64(3) | Run start time |
+| `completed_at` | DateTime64(3) | Run end time |
+| `status` | String | `running` / `completed` / `failed` |
+| `contacts_collected` | Float64 | Rows collected for `salesforce_contacts` |
+| `accounts_collected` | Float64 | Rows collected for `salesforce_accounts` |
+| `opportunities_collected` | Float64 | Rows collected for `salesforce_opportunities` |
+| `activities_collected` | Float64 | Rows collected for `salesforce_activities` |
+| `users_collected` | Float64 | Rows collected for `salesforce_users` |
+| `api_calls` | Float64 | API / SOQL queries made |
+| `errors` | Float64 | Errors encountered |
+| `settings` | String | Collection configuration (instance URL, object types, lookback) |
 
 Monitoring table — not an analytics source.
 
