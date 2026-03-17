@@ -47,28 +47,28 @@ The solution consists of five main components:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                          Frontend (SPA)                           │
-│  Dashboards · Analytics · AI adoption · PR metrics · Team health  │
+│                          Frontend (SPA)                          │
+│  Dashboards · Analytics · AI adoption · PR metrics · Team healt  │
 └────────────────────────────┬─────────────────────────────────────┘
                              │ REST API (auth + data)
 ┌────────────────────────────▼─────────────────────────────────────┐
-│                    Backend (REST API Server)                       │
-│        Authentication · Authorization · User Management           │
-│                     Data Proxy to Database                        │
+│                    Backend (REST API Server)                     │
+│        Authentication · Authorization · User Management          │
+│                     Data Proxy to Database                       │
 └────────────────────────────┬─────────────────────────────────────┘
                              │ query
 ┌────────────────────────────▼─────────────────────────────────────┐
-│                    Database (Analytics Store)                      │
-│             Bronze → Silver → Gold (identity-resolved)            │
+│                    Database (Analytics Store)                    │
+│             Bronze → Silver → Gold (identity-resolved)           │
 └────────────────────────────▲─────────────────────────────────────┘
                              │ write
 ┌────────────────────────────┴─────────────────────────────────────┐
-│              Connector Orchestration Layer                        │
-│         Scheduling · Retry · State management · Monitoring        │
+│              Connector Orchestration Layer                       │
+│         Scheduling · Retry · State management · Monitorin        │
 └────────────────────────────▲─────────────────────────────────────┘
                              │ collect
 ┌────────────────────────────┴─────────────────────────────────────┐
-│                         Connectors                                │
+│                         Connectors                               │
 │   Git · Task Tracking · Collaboration · AI Tools · HR · CRM ...  │
 └──────────────────────────────────────────────────────────────────┘
 ```
