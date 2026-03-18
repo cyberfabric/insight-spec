@@ -143,7 +143,7 @@ Organizations typically use 5–15+ SaaS tools across development, HR, communica
 
 **ID**: `cpt-insightspec-actor-cn-identity-manager`
 
-**Role**: External service that resolves source-native user identifiers to canonical `person_id` during Silver step 2. Maintained as a separate domain (see `docs/domain/identity-resolution/`).
+**Role**: Part of Insight service that resolves source-native user identifiers to canonical `person_id` during Silver step 2. Maintained as a separate domain (see `docs/domain/identity-resolution/`).
 
 ## 3. Operational Concept & Environment
 
