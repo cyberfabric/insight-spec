@@ -15,6 +15,7 @@ Data-source agnostic specification for Version Control connectors. Defines unifi
   - [`git_commits`](#git_commits)
   - [`git_commits_ext` — Extended commit properties](#git_commits_ext-extended-commit-properties)
   - [`git_commit_files` — Per-file line changes](#git_commit_files-per-file-line-changes)
+  - [`git_commits_files_ext` — Extended per-file properties](#git_commits_files_ext-extended-per-file-properties)
   - [`git_pull_requests`](#git_pull_requests)
   - [`git_pull_requests_ext` — Extended PR properties](#git_pull_requests_ext-extended-pr-properties)
   - [`git_pull_requests_reviewers` — Review submissions and approvals](#git_pull_requests_reviewers-review-submissions-and-approvals)
@@ -366,9 +367,6 @@ WHERE project_key = 'MyOrg'
 | `file_extension` | String | NULLABLE | File extension (e.g., "py", "java", "ts") |
 | `lines_added` | Int64 | NULLABLE | Lines added in this file |
 | `lines_removed` | Int64 | NULLABLE | Lines removed in this file |
-| `ai_thirdparty_flag` | UInt8 | DEFAULT 0 | AI-detected third-party code flag (0 or 1) |
-| `scancode_thirdparty_flag` | UInt8 | DEFAULT 0 | License scanner detected third-party flag (0 or 1) |
-| `scancode_metadata` | String | NULLABLE | License and copyright info as JSON |
 | `collected_at` | DateTime64(3) | REQUIRED | Collection timestamp |
 | `data_source` | String | REQUIRED | Source discriminator |
 | `_version` | UInt64 | REQUIRED | Deduplication version |
@@ -377,6 +375,70 @@ WHERE project_key = 'MyOrg'
 - `idx_file_lookup`: `(project_key, repo_slug, commit_hash, file_path, data_source)`
 
 **Purpose**: Granular file-level analysis for commit impact. Enables queries like "show all changes to authentication files" or "calculate churn per directory."
+
+**Note**: Extended per-file properties (AI detection flags, license scanning results) are stored in the separate `git_commits_files_ext` table to maintain schema flexibility.
+
+---
+
+### `git_commits_files_ext` — Extended per-file properties
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | Int64 | PRIMARY KEY | Auto-generated unique identifier |
+| `project_key` | String | REQUIRED | Repository owner — joins to `git_commit_files.project_key` |
+| `repo_slug` | String | REQUIRED | Repository name — joins to `git_commit_files.repo_slug` |
+| `commit_hash` | String | REQUIRED | Commit SHA — joins to `git_commit_files.commit_hash` |
+| `file_path` | String | REQUIRED | File path — joins to `git_commit_files.file_path` |
+| `property_key` | String | REQUIRED | Property name (e.g., `ai_thirdparty_flag`, `scancode_thirdparty_flag`, `scancode_metadata`) |
+| `property_value` | String | REQUIRED | Property value (stored as string, can be JSON for complex values) |
+| `property_type` | String | REQUIRED | Value type hint: `string`, `number`, `boolean`, `json` |
+| `collected_at` | DateTime64(3) | REQUIRED | When this property was collected/computed |
+| `data_source` | String | DEFAULT '' | Source discriminator — joins to `git_commit_files.data_source` |
+| `_version` | UInt64 | REQUIRED | Deduplication version |
+
+**Indexes**:
+- `idx_commit_file_ext_lookup`: `(project_key, repo_slug, commit_hash, file_path, property_key, data_source)`
+- `idx_file_property_key`: `(property_key)`
+
+**Purpose**: Flexible key-value table for storing extended per-file properties without modifying the core `git_commit_files` schema. Enables addition of new file-level analysis results (AI detection, license scanning, security analysis) without schema migrations.
+
+**Common property keys**:
+- `ai_thirdparty_flag` — AI-detected third-party code (0 or 1) — type: `boolean`
+- `scancode_thirdparty_flag` — License scanner detected third-party (0 or 1) — type: `boolean`
+- `scancode_metadata` — License and copyright scanning results for this file — type: `json`
+
+**Usage example**:
+```sql
+-- Find all files with third-party code in a repository
+SELECT cf.commit_hash, cf.file_path, cf.file_extension,
+       ext.property_key, ext.property_value
+FROM git_commit_files cf
+JOIN git_commits_files_ext ext
+  ON cf.project_key = ext.project_key
+  AND cf.repo_slug = ext.repo_slug
+  AND cf.commit_hash = ext.commit_hash
+  AND cf.file_path = ext.file_path
+  AND cf.data_source = ext.data_source
+WHERE cf.project_key = 'MyOrg'
+  AND cf.repo_slug = 'my-repo'
+  AND ext.property_key IN ('ai_thirdparty_flag', 'scancode_thirdparty_flag')
+  AND ext.property_value = '1';
+
+-- Get scancode metadata for all files in a commit
+SELECT file_path, property_value as scancode_metadata
+FROM git_commits_files_ext
+WHERE commit_hash = 'abc123...'
+  AND property_key = 'scancode_metadata'
+  AND data_source = 'insight_bitbucket_server';
+```
+
+**Design rationale**:
+- **Flexibility**: Add new per-file properties without schema changes
+- **Efficiency**: Query only needed properties via index on `property_key`
+- **Versioning**: Track when each property was computed via `collected_at`
+- **Normalization**: Avoid wide table with many NULL values
+- **Evolution**: Properties can be deprecated or renamed without data migration
+- **Optional enrichment**: Not every deployment runs AI detection or ScanCode; rows are only inserted when those pipelines are active
 
 ---
 
@@ -746,6 +808,7 @@ WHERE ext.property_key = 'hotfix_flag'
 | `git_pull_requests_ext` | *(enrichment data)* | Merged into `class_pr_activity` during Gold transformation |
 | `git_tickets` | Cross-domain join → `class_task_tracker_activities.task_id` | Planned |
 | `git_commit_files` | *(granular detail)* | Available — no unified stream defined yet |
+| `git_commits_files_ext` | *(enrichment data)* | Merged into `class_commits` during Silver transformation alongside `git_commits_ext` |
 | `git_pull_requests_reviewers` | *(review analytics)* | Available — aggregated into PR-level metrics |
 | `git_pull_requests_comments` | *(review analytics)* | Available — aggregated into PR-level metrics |
 | `git_pull_requests_commits` | *(junction)* | Used internally for PR↔commit linkage |

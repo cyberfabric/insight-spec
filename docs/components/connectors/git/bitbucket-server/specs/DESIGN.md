@@ -108,7 +108,8 @@ Fault tolerance is achieved through per-repository checkpointing and continue-on
            ┌────────────────▼─────────────────────────────┐
            │  Silver Tables (unified git_* schema)         │
            │  git_repositories, git_commits,               │
-           │  git_commit_files, git_pull_requests,         │
+           │  git_commit_files, git_commits_files_ext,      │
+           │  git_pull_requests,                            │
            │  git_pull_requests_reviewers,                  │
            │  git_pull_requests_comments,                   │
            │  git_pull_requests_commits, git_tickets,       │
@@ -597,6 +598,43 @@ INSERT INTO bitbucket_api_cache (
 
 ---
 
+#### Table: `git_commits_files_ext`
+
+**ID**: `cpt-insightspec-dbtable-bb-commits-files-ext`
+
+**Schema**:
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | Int64 | PRIMARY KEY | Auto-generated unique identifier |
+| `project_key` | String | REQUIRED | Repository owner — joins to `git_commit_files.project_key` |
+| `repo_slug` | String | REQUIRED | Repository name — joins to `git_commit_files.repo_slug` |
+| `commit_hash` | String | REQUIRED | Commit SHA — joins to `git_commit_files.commit_hash` |
+| `file_path` | String | REQUIRED | File path — joins to `git_commit_files.file_path` |
+| `property_key` | String | REQUIRED | Property name (e.g., `ai_thirdparty_flag`, `scancode_thirdparty_flag`, `scancode_metadata`) |
+| `property_value` | String | REQUIRED | Property value (stored as string, can be JSON for complex values) |
+| `property_type` | String | REQUIRED | Value type hint: `string`, `number`, `boolean`, `json` |
+| `collected_at` | DateTime64(3) | REQUIRED | When this property was collected/computed |
+| `data_source` | String | DEFAULT '' | Source discriminator — always `'insight_bitbucket_server'` for this connector |
+| `_version` | UInt64 | REQUIRED | Deduplication version (Unix ms) |
+
+**PK**: `id`
+
+**Indexes**:
+- `idx_commit_file_ext_lookup`: `(project_key, repo_slug, commit_hash, file_path, property_key, data_source)`
+- `idx_file_property_key`: `(property_key)`
+
+**Populated by**: AI detection pipeline and ScanCode pipeline (separate from the Bitbucket connector). The connector itself does not populate this table; it is enriched post-collection.
+
+**Common property keys**:
+- `ai_thirdparty_flag` — AI-detected third-party code (0 or 1) — type: `boolean`
+- `scancode_thirdparty_flag` — License scanner detected third-party (0 or 1) — type: `boolean`
+- `scancode_metadata` — License and copyright scanning results for this file — type: `json`
+
+**Schema reference**: `docs/components/connectors/git/README.md` → `git_commits_files_ext`
+
+---
+
 ## 4. Additional context
 
 ### API Details
@@ -722,6 +760,26 @@ def paginate_endpoint(api_client, endpoint, **params):
     'lines_removed': calculate_lines_removed(diff_data),
     'is_merge_commit': 1 if len(api_data.get('parents', [])) > 1 else 0,
     'metadata': json.dumps(api_data),
+    'collected_at': datetime.now(),
+    'data_source': 'insight_bitbucket_server',
+    '_version': int(time.time() * 1000)
+}
+```
+
+**Commit file** → `git_commit_files` (one row per file in diff):
+
+```python
+{
+    'project_key': project_key,
+    'repo_slug': repo_slug,
+    'commit_hash': commit_hash,
+    'diff_hash': sha256(diff_content),
+    'file_path': diff['destination']['toString'],        # or source if deleted
+    'file_extension': extract_extension(file_path),
+    'lines_added': calculate_file_lines_added(diff),
+    'lines_removed': calculate_file_lines_removed(diff),
+    # ai_thirdparty_flag, scancode_thirdparty_flag, scancode_metadata
+    # are stored in git_commits_files_ext (populated by separate enrichment pipelines)
     'collected_at': datetime.now(),
     'data_source': 'insight_bitbucket_server',
     '_version': int(time.time() * 1000)
