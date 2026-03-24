@@ -248,6 +248,12 @@ path = "docs/domain/connector/specs/ADR/0001-connector-integration-protocol.md"
 name = "ADR-0001: Connector-to-System Integration Protocol"
 
 [[systems.artifacts]]
+kind = "DECOMPOSITION"
+path = "docs/domain/ingestion/specs/DECOMPOSITION.md"
+name = "Ingestion Layer Decomposition"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
 kind = "PRD"
 path = "docs/domain/ingestion/specs/PRD.md"
 name = "Ingestion Layer PRD"
