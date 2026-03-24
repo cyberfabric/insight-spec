@@ -6,16 +6,19 @@ AIRBYTE_URL="${AIRBYTE_URL:-http://localhost:8000}"
 CONNECTORS_DIR="./connectors"
 
 get_token() {
-  local creds
-  creds=$(abctl local credentials 2>&1 | sed 's/\x1b\[[0-9;]*m//g')
-  local client_id client_secret
-  client_id=$(echo "$creds" | grep "Client-Id:" | awk '{print $NF}')
-  client_secret=$(echo "$creds" | grep "Client-Secret:" | awk '{print $NF}')
+  local secret
+  secret=$(KUBECONFIG=${HOME}/.airbyte/abctl/abctl.kubeconfig kubectl exec -n airbyte-abctl \
+    "$(KUBECONFIG=${HOME}/.airbyte/abctl/abctl.kubeconfig kubectl get pod -n airbyte-abctl -l app.kubernetes.io/name=server -o jsonpath='{.items[0].metadata.name}')" \
+    -- printenv AB_JWT_SIGNATURE_SECRET 2>/dev/null)
 
-  AIRBYTE_TOKEN=$(curl -sf -X POST "${AIRBYTE_URL}/api/v1/applications/token" \
-    -H "Content-Type: application/json" \
-    -d "{\"client_id\":\"${client_id}\",\"client_secret\":\"${client_secret}\"}" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  AIRBYTE_TOKEN=$(node -e "
+    const c=require('crypto');
+    const h=Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
+    const n=Math.floor(Date.now()/1000);
+    const p=Buffer.from(JSON.stringify({iss:'airbyte-server',sub:'00000000-0000-0000-0000-000000000000',iat:n,exp:n+300})).toString('base64url');
+    const s=c.createHmac('sha256','${secret}').update(h+'.'+p).digest('base64url');
+    console.log(h+'.'+p+'.'+s);
+  ")
 }
 
 api() {
@@ -26,7 +29,13 @@ api() {
 }
 
 get_workspace_id() {
-  api GET "/api/public/v1/workspaces" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'][0]['workspaceId'])"
+  local public_token
+  public_token=$(curl -sf -X POST "${AIRBYTE_URL}/api/public/v1/applications/token" \
+    -H "Content-Type: application/json" \
+    -d "$(abctl local credentials 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | awk '/Client-Id/{cid=$NF} /Client-Secret/{cs=$NF} END{printf "{\"client_id\":\"%s\",\"client_secret\":\"%s\",\"grant_type\":\"client_credentials\"}", cid, cs}')" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  curl -sf -H "Authorization: Bearer ${public_token}" "${AIRBYTE_URL}/api/public/v1/workspaces" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['data'][0]['workspaceId'])"
 }
 
 upload_connector() {
@@ -43,42 +52,48 @@ upload_connector() {
   local name
   name=$(yq -r '.name' "${descriptor_path}" 2>/dev/null || basename "$connector")
 
-  local manifest_json
+  local manifest_json conn_spec
   manifest_json=$(yq -c '.' "${manifest_path}")
+  conn_spec=$(yq -c '.spec.connection_specification' "${manifest_path}")
 
   local workspace_id
   workspace_id=$(get_workspace_id)
 
-  local existing
-  existing=$(api GET "/api/public/v1/sources?workspaceIds=${workspace_id}" | \
-    python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for s in data.get('data', []):
-    if s.get('name') == '${name}':
-        print(s['sourceId'])
+  get_token
+
+  # Check if builder project exists
+  local project_id
+  project_id=$(api POST "/api/v1/connector_builder_projects/list" \
+    "{\"workspaceId\":\"${workspace_id}\"}" | python3 -c "
+import sys,json
+for p in json.load(sys.stdin).get('projects',[]):
+    if p['name']=='${name}':
+        print(p['builderProjectId'])
         break
 " 2>/dev/null || true)
 
-  if [[ -n "$existing" ]]; then
-    echo "  Updating source '${name}' (${existing})..."
-    api PATCH "/api/public/v1/sources/${existing}" "{
-      \"name\": \"${name}\",
-      \"configuration\": {\"__injected_declarative_manifest\": ${manifest_json}}
-    }" >/dev/null
+  if [[ -n "$project_id" ]]; then
+    echo "  Updating '${name}' (project ${project_id})..."
+    get_token
+    api POST "/api/v1/connector_builder_projects/update" \
+      "{\"workspaceId\":\"${workspace_id}\",\"builderProjectId\":\"${project_id}\",\"builderProject\":{\"name\":\"${name}\",\"draftManifest\":${manifest_json}}}" >/dev/null
   else
-    echo "  Creating source '${name}'..."
-    api POST "/api/public/v1/sources" "{
-      \"workspaceId\": \"${workspace_id}\",
-      \"name\": \"${name}\",
-      \"definitionId\": \"64a2f99c-542f-4af8-9a6f-355f1217b436\",
-      \"configuration\": {\"__injected_declarative_manifest\": ${manifest_json}}
-    }" >/dev/null
+    echo "  Creating '${name}'..."
+    get_token
+    project_id=$(api POST "/api/v1/connector_builder_projects/create" \
+      "{\"workspaceId\":\"${workspace_id}\",\"builderProject\":{\"name\":\"${name}\",\"draftManifest\":${manifest_json}}}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin)['builderProjectId'])")
+
+    echo "  Publishing '${name}'..."
+    get_token
+    local def_id
+    def_id=$(api POST "/api/v1/connector_builder_projects/publish" \
+      "{\"workspaceId\":\"${workspace_id}\",\"builderProjectId\":\"${project_id}\",\"name\":\"${name}\",\"initialDeclarativeManifest\":{\"manifest\":${manifest_json},\"spec\":{\"connectionSpecification\":${conn_spec}},\"version\":1,\"description\":\"${name}\"}}" \
+      | python3 -c "import sys,json; print(json.load(sys.stdin)['sourceDefinitionId'])")
+    echo "  Published: definition ${def_id}"
   fi
   echo "  Done: ${name}"
 }
-
-get_token
 
 if [[ "${1:-}" == "--all" ]]; then
   manifests=$(find "$CONNECTORS_DIR" -name "connector.yaml" 2>/dev/null)
