@@ -51,15 +51,14 @@ The Cursor Connector extracts team membership, audit logs, individual AI usage e
 Cursor is an AI-first code editor used by development teams for AI-assisted coding (chat, inline edit, composer, agent mode, tab completions). Understanding how teams use Cursor is essential for measuring AI adoption intensity, tracking cost per user, and comparing AI dev tool usage patterns across Cursor, Windsurf, and GitHub Copilot.
 
 The Cursor Admin API provides four endpoint groups:
+The Cursor Admin API provides four data areas:
 
-- `GET /teams/members` — team member directory
-- `GET /teams/audit-logs` — security and administrative events
-- `POST /teams/filtered-usage-events` — individual AI invocation events with model, cost, and optional token breakdown
-- `POST /teams/daily-usage-data` — daily per-user aggregated activity metrics (chat, composer, agent, tab completions, lines added/deleted)
+- **Team members** — team member directory
+- **Audit logs** — security and administrative events
+- **Usage events** — individual AI invocation events with model, cost, and optional token breakdown
+- **Daily usage** — daily per-user aggregated activity metrics (chat, composer, agent, tab completions, lines added/deleted)
 
-The API uses Basic authentication with a team API key. Usage and daily-usage endpoints use POST with date-range parameters; the audit log endpoint uses GET with query parameters.
-
-**Expected data volumes**: Typical teams of 10–500 users generate 500–50,000 usage events per day and 10–500 daily usage rows per day. Audit log volume is low (tens of events per day). Members endpoint returns one row per team member.
+The API uses Basic authentication with a team API key. Usage and daily-usage data require date-range parameters; audit logs use time-range parameters.
 
 **Target Users**:
 
@@ -173,7 +172,7 @@ Resolves `email`/`userEmail` from Cursor Bronze tables to canonical `person_id` 
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-cursor-team-members`
 
-The connector **MUST** extract the team member directory from the `GET /teams/members` endpoint, including: member ID, name, email, role, and removal status (`isRemoved`).
+The connector **MUST** extract the team member directory, including member identity attributes (name, email), role, and removal status.
 
 **Rationale**: The team directory provides the `email` identity key for cross-system resolution and the membership roster for understanding team composition and license utilisation.
 
