@@ -1,0 +1,13 @@
+.terraform/
+*.tfstate
+*.tfstate.backup
+terraform.tfstate.d/
+.env.local
+*.env.local
+tools/declarative-connector/
+workflows/example-tenant/
+workflows/*/
+!workflows/templates/
+!workflows/schedules/
+dbt/target/
+dbt/logs/
