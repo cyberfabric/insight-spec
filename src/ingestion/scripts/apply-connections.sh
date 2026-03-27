@@ -1,55 +1,269 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
+# KUBECONFIG can be empty when running in-cluster
+
+# Resolve shared Airbyte env
+if [[ -z "${AIRBYTE_TOKEN:-}" ]]; then
+  source ./scripts/resolve-airbyte-env.sh
+fi
 
 CONNECTIONS_DIR="./connections"
-
-get_airbyte_creds() {
-  local creds
-  creds=$(abctl local credentials 2>/dev/null | grep -E "Email|Password" || true)
-  AIRBYTE_EMAIL=$(echo "$creds" | grep Email | awk '{print $NF}')
-  AIRBYTE_PASSWORD=$(echo "$creds" | grep Password | awk '{print $NF}')
-}
+CONNECTORS_DIR="./connectors"
 
 apply_tenant() {
-  local tenant="$1"
-  local tfvars="${CONNECTIONS_DIR}/${tenant}.tfvars"
+  local tenant_config="$1"
 
-  if [[ ! -f "$tfvars" ]]; then
-    echo "  SKIP: no ${tfvars}"
-    return 0
-  fi
+  python3 - "$tenant_config" "$CONNECTORS_DIR" "$CONNECTIONS_DIR" \
+    "${AIRBYTE_API:-http://localhost:8000}" "$AIRBYTE_TOKEN" "$WORKSPACE_ID" <<'PYTHON'
+import sys, os, json, yaml, urllib.request, urllib.error, pathlib
 
-  get_airbyte_creds
+tenant_config_path, connectors_dir, connections_dir, airbyte_url, token, workspace_id = sys.argv[1:7]
+state_dir = os.path.join(connections_dir, ".state")
+os.makedirs(state_dir, exist_ok=True)
 
-  cd "$CONNECTIONS_DIR"
+# Derive state file name from config file name (not tenant_id)
+config_basename = os.path.splitext(os.path.basename(tenant_config_path))[0]
 
-  terraform init -input=false -no-color >/dev/null 2>&1
+# Load tenant config
+with open(tenant_config_path) as f:
+    tenant = yaml.safe_load(f)
 
-  terraform workspace select "$tenant" 2>/dev/null || terraform workspace new "$tenant" >/dev/null
+tenant_id = tenant["tenant_id"]
+dest_config = tenant.get("destination", {})
+state_path = os.path.join(state_dir, f"{config_basename}.yaml")
 
-  terraform apply -auto-approve -input=false -no-color \
-    -var="tenant_id=${tenant}" \
-    -var="airbyte_username=${AIRBYTE_EMAIL}" \
-    -var="airbyte_password=${AIRBYTE_PASSWORD}" \
-    -var-file="../${tfvars}" 2>&1 | grep -E "Apply|Plan|Error" || true
+# Load existing state
+state = {}
+if os.path.exists(state_path):
+    with open(state_path) as f:
+        state = yaml.safe_load(f) or {}
 
-  cd ..
+headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+def api(method, path, data=None):
+    body = json.dumps(data).encode() if data else None
+    req = urllib.request.Request(f"{airbyte_url}{path}", data=body, headers=headers, method=method)
+    try:
+        resp = urllib.request.urlopen(req)
+        content = resp.read()
+        return json.loads(content) if content else {}
+    except urllib.error.HTTPError as e:
+        err = e.read().decode()
+        print(f"  API {e.code}: {err[:200]}", file=sys.stderr)
+        return None
+
+def find_or_create(resource_type, list_path, list_key, create_path, create_data, id_key, name_field, name_value):
+    """Find existing resource by name or create new one."""
+    existing = api("POST", list_path, {"workspaceId": workspace_id})
+    if existing:
+        for item in existing.get(list_key, []):
+            if item.get("name") == name_value:
+                print(f"  Found existing {resource_type}: {item[id_key]}")
+                return item[id_key]
+
+    result = api("POST", create_path, create_data)
+    if result and id_key in result:
+        print(f"  Created {resource_type}: {result[id_key]}")
+        return result[id_key]
+
+    print(f"  ERROR: could not create {resource_type}", file=sys.stderr)
+    return None
+
+# --- ClickHouse destination ---
+dest_name = f"clickhouse-{tenant_id}"
+print(f"  Destination: {dest_name}")
+
+# Check if already exists
+dest_id = state.get("destination_id")
+if not dest_id:
+    existing = api("POST", "/api/v1/destinations/list", {"workspaceId": workspace_id})
+    if existing:
+        for d in existing.get("destinations", []):
+            if d["name"] == dest_name:
+                dest_id = d["destinationId"]
+                print(f"    Found existing: {dest_id}")
+                break
+
+# Create if not found
+if not dest_id:
+    # Lookup ClickHouse definition ID
+    ch_def_id = state.get("clickhouse_definition_id")
+    if not ch_def_id:
+        defs = api("POST", "/api/v1/destination_definitions/list", {"workspaceId": workspace_id})
+        if defs:
+            for d in defs.get("destinationDefinitions", []):
+                if "clickhouse" in d["name"].lower():
+                    ch_def_id = d["destinationDefinitionId"]
+                    print(f"    ClickHouse definition: {ch_def_id}")
+                    break
+    if not ch_def_id:
+        print("  ERROR: ClickHouse destination definition not found in Airbyte", file=sys.stderr)
+        sys.exit(1)
+    state["clickhouse_definition_id"] = ch_def_id
+
+    result = api("POST", "/api/v1/destinations/create", {
+        "workspaceId": workspace_id,
+        "name": dest_name,
+        "destinationDefinitionId": ch_def_id,
+        "connectionConfiguration": {
+            "host": dest_config.get("host", "clickhouse.data.svc.cluster.local"),
+            "port": str(dest_config.get("port", 8123)),
+            "database": f"bronze_{tenant_id}",
+            "username": dest_config.get("username", "default"),
+            "password": dest_config.get("password", "clickhouse"),
+            "protocol": "http",
+        }
+    })
+    if result and "destinationId" in result:
+        dest_id = result["destinationId"]
+        print(f"    Created: {dest_id}")
+    else:
+        print(f"  ERROR: could not create destination: {result}", file=sys.stderr)
+        sys.exit(1)
+
+state["destination_id"] = dest_id
+
+# --- Create ClickHouse database ---
+print(f"  Creating database: bronze_{tenant_id}")
+os.system(f'kubectl exec -n data deploy/clickhouse -- clickhouse-client --password clickhouse --query "CREATE DATABASE IF NOT EXISTS bronze_{tenant_id}" 2>/dev/null')
+
+# --- Per-connector sources + connections ---
+state.setdefault("connectors", {})
+
+for connector_name, creds in tenant.get("connectors", {}).items():
+    print(f"  Connector: {connector_name}")
+
+    # Find descriptor
+    descriptor_path = None
+    for p in pathlib.Path(connectors_dir).rglob("descriptor.yaml"):
+        with open(p) as f:
+            desc = yaml.safe_load(f)
+        if desc.get("name") == connector_name:
+            descriptor_path = p
+            break
+
+    if not descriptor_path:
+        print(f"    SKIP: no descriptor for {connector_name}")
+        continue
+
+    with open(descriptor_path) as f:
+        descriptor = yaml.safe_load(f)
+
+    conn_state = state["connectors"].setdefault(connector_name, {})
+
+    # Find source definition ID
+    def_id = conn_state.get("definition_id")
+    if not def_id:
+        defs = api("POST", "/api/v1/source_definitions/list", {"workspaceId": workspace_id})
+        if defs:
+            for d in defs.get("sourceDefinitions", []):
+                if d["name"].lower() == connector_name.lower():
+                    def_id = d["sourceDefinitionId"]
+                    break
+    if not def_id:
+        print(f"    SKIP: source definition not found for {connector_name} (run upload-manifests first)")
+        continue
+    conn_state["definition_id"] = def_id
+
+    # Create/find source
+    source_name = f"{connector_name}-{tenant_id}"
+    source_id = conn_state.get("source_id")
+    if not source_id:
+        # Fill in tenant_id in credentials
+        config = dict(creds)
+        if "insights_tenant_id" not in config or config["insights_tenant_id"] == "${tenant_id}":
+            config["insights_tenant_id"] = tenant_id
+
+        source_id = find_or_create(
+            "source",
+            "/api/v1/sources/list", "sources",
+            "/api/v1/sources/create",
+            {
+                "workspaceId": workspace_id,
+                "name": source_name,
+                "sourceDefinitionId": def_id,
+                "connectionConfiguration": config,
+            },
+            "sourceId", "name", source_name
+        )
+    if not source_id:
+        print(f"    ERROR: no source created for {connector_name}")
+        continue
+    conn_state["source_id"] = source_id
+
+    # Create/find connection
+    connection_config = descriptor.get("connection", {})
+    connection_name = f"{connector_name}-to-clickhouse-{tenant_id}"
+    connection_id = conn_state.get("connection_id")
+
+    if not connection_id:
+        namespace = connection_config.get("namespace", f"bronze_{tenant_id}").replace("${tenant_id}", tenant_id)
+        streams = connection_config.get("streams", [])
+
+        # Build catalog for connection
+        sync_catalog = {"streams": []}
+        for s in streams:
+            sync_catalog["streams"].append({
+                "stream": {
+                    "name": s["name"],
+                    "jsonSchema": {},
+                    "supportedSyncModes": ["full_refresh", "incremental"],
+                },
+                "config": {
+                    "syncMode": "incremental" if "incremental" in s.get("sync_mode", "") else "full_refresh",
+                    "destinationSyncMode": "append",
+                    "selected": True,
+                }
+            })
+
+        connection_id = find_or_create(
+            "connection",
+            "/api/v1/connections/list", "connections",
+            "/api/v1/connections/create",
+            {
+                "sourceId": source_id,
+                "destinationId": dest_id,
+                "name": connection_name,
+                "namespaceDefinition": "customformat",
+                "namespaceFormat": namespace,
+                "status": "active",
+                "syncCatalog": sync_catalog,
+            },
+            "connectionId", "name", connection_name
+        )
+    if connection_id:
+        conn_state["connection_id"] = connection_id
+        print(f"    Connection: {connection_id}")
+
+# Save state to file
+state["workspace_id"] = workspace_id
+with open(state_path, "w") as f:
+    yaml.dump(state, f, default_flow_style=False)
+
+# Persist state as K8s ConfigMap (survives pod restarts)
+cm_name = f"connection-state-{config_basename}"
+os.system(f'kubectl create configmap {cm_name} --from-file=state.yaml={state_path} -n data --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null')
+
+print(f"  State saved: {state_path} + configmap/{cm_name}")
+PYTHON
 }
 
+# --- Main ---
 if [[ "${1:-}" == "--all" ]]; then
-  tfvars_files=$(find "$CONNECTIONS_DIR" -name "*.tfvars" 2>/dev/null)
-  if [[ -z "$tfvars_files" ]]; then
-    echo "  No tenant tfvars found"
-    exit 0
-  fi
-  for tfvars in $tfvars_files; do
-    tenant=$(basename "$tfvars" .tfvars)
+  for config_file in "${CONNECTIONS_DIR}"/*.yaml; do
+    [[ -f "$config_file" ]] || continue
+    tenant=$(basename "$config_file" .yaml)
     echo "  Applying connections for tenant: $tenant"
-    apply_tenant "$tenant"
+    apply_tenant "$config_file"
   done
 else
   tenant="${1:?Usage: $0 <tenant_id> | --all}"
+  config_file="${CONNECTIONS_DIR}/${tenant}.yaml"
+  [[ -f "$config_file" ]] || { echo "ERROR: no config at ${config_file}" >&2; exit 1; }
   echo "  Applying connections for tenant: $tenant"
-  apply_tenant "$tenant"
+  apply_tenant "$config_file"
 fi

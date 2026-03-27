@@ -7,5 +7,5 @@ ingestion:
       port: 8123
       schema: silver
       user: default
-      password: ""
+      password: "clickhouse"
       secure: false

@@ -1,0 +1,21 @@
+# Tenant connection config
+# Copy to example-tenant.yaml and fill in real credentials
+# NEVER commit the .yaml file — only .yaml.example is tracked
+
+tenant_id: example_tenant
+
+# ClickHouse destination
+destination:
+  type: clickhouse
+  host: clickhouse.data.svc.cluster.local
+  port: 8123
+  username: default
+  password: clickhouse
+
+# Connector credentials
+connectors:
+  m365:
+    azure_tenant_id: "YOUR_AZURE_TENANT_ID"
+    azure_client_id: "YOUR_AZURE_CLIENT_ID"
+    azure_client_secret: "YOUR_AZURE_CLIENT_SECRET"
+    insights_tenant_id: "${tenant_id}"   # auto-filled from tenant_id above

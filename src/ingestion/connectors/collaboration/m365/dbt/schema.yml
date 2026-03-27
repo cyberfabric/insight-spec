@@ -1,8 +1,8 @@
 version: 2
 
 sources:
-  - name: bronze_m365
-    schema: bronze_m365
+  - name: bronze_example_tenant
+    schema: bronze_example_tenant
     tables:
       - name: email_activity
       - name: teams_activity

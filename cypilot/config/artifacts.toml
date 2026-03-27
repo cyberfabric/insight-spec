@@ -102,16 +102,10 @@ kind = "DESIGN"
 path = "docs/components/connectors/hr-directory/README.md"
 name = "HR Silver Layer"
 
-
-[[systems.artifacts]]
-kind = "PRD"
-path = "docs/components/connectors/hr-directory/bamboohr/specs/PRD.md"
-name = "BambooHR Connector PRD"
-
 [[systems.artifacts]]
 kind = "DESIGN"
-path = "docs/components/connectors/hr-directory/bamboohr/specs/DESIGN.md"
-name = "BambooHR Connector Design"
+path = "docs/components/connectors/hr-directory/bamboohr.md"
+name = "BambooHR Connector Specification"
 
 [[systems.artifacts]]
 kind = "DESIGN"
@@ -152,16 +146,6 @@ name = "Zulip Connector Specification"
 kind = "DESIGN"
 path = "docs/components/connectors/collaboration/slack.md"
 name = "Slack Connector Specification"
-
-[[systems.artifacts]]
-kind = "PRD"
-path = "docs/components/connectors/collaboration/zoom/specs/PRD.md"
-name = "Zoom Connector PRD"
-
-[[systems.artifacts]]
-kind = "DESIGN"
-path = "docs/components/connectors/collaboration/zoom/specs/DESIGN.md"
-name = "Zoom Connector Design"
 
 [[systems.artifacts]]
 kind = "DESIGN"
@@ -284,7 +268,13 @@ traceability = "DOCS-ONLY"
 [[systems.artifacts]]
 kind = "ADR"
 path = "docs/domain/ingestion/specs/ADR/0001-kestra-over-airflow.md"
-name = "ADR-0001: Kestra over Airflow"
+name = "ADR-0001: Kestra over Airflow (superseded)"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/domain/ingestion/specs/ADR/0002-argo-over-kestra.md"
+name = "ADR-0002: Argo Workflows over Kestra"
 traceability = "DOCS-ONLY"
 
 [[systems.artifacts]]
