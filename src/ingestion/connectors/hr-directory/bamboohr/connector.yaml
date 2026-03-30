@@ -108,7 +108,7 @@ definitions:
         fields:
           - path: [tenant_id]
             value: "{{ config['tenant_id'] }}"
-          - path: [source_instance_id]
+          - path: [insight_source_id]
             value: "bamboohr-{{ config['domain'] }}"
           - path: [_source]
             value: "bamboohr"
@@ -123,7 +123,7 @@ definitions:
         properties:
           tenant_id:
             type: string
-          source_instance_id:
+          insight_source_id:
             type: string
           id:
             type: string
@@ -246,7 +246,7 @@ definitions:
         fields:
           - path: [tenant_id]
             value: "{{ config['tenant_id'] }}"
-          - path: [source_instance_id]
+          - path: [insight_source_id]
             value: "bamboohr-{{ config['domain'] }}"
           - path: [_source]
             value: "bamboohr"
@@ -261,7 +261,7 @@ definitions:
         properties:
           tenant_id:
             type: string
-          source_instance_id:
+          insight_source_id:
             type: string
           id:
             type: string
@@ -376,7 +376,7 @@ definitions:
             value: "{{ 'd' ~ record['id'] if record.get('deprecated', false) else record['id'] | string }}"
           - path: [tenant_id]
             value: "{{ config['tenant_id'] }}"
-          - path: [source_instance_id]
+          - path: [insight_source_id]
             value: "bamboohr-{{ config['domain'] }}"
           - path: [_source]
             value: "bamboohr"
@@ -391,7 +391,7 @@ definitions:
         properties:
           tenant_id:
             type: string
-          source_instance_id:
+          insight_source_id:
             type: string
           id:
             type:

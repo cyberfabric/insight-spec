@@ -5,7 +5,7 @@
 
 SELECT
     tenant_id,
-    source_instance_id,
+    insight_source_id,
     concat(date, '|', actor_identifier, '|', terminal_type)
                                                     AS unique_id,
     date                                            AS report_date,

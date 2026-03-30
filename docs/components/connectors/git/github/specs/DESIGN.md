@@ -626,7 +626,7 @@ sequenceDiagram
     Pipeline ->> DB: SELECT * FROM git_commit_files WHERE data_source='insight_github'
     DB -->> Pipeline: commit file records
     loop For each file analyzed
-        Pipeline ->> DB: UPSERT git_commits_files_ext (tenant_id, source_instance_id, project_key, repo_slug, commit_hash, file_path, field_id, field_name, field_value_str/int/float, ...)
+        Pipeline ->> DB: UPSERT git_commits_files_ext (tenant_id, insight_source_id, project_key, repo_slug, commit_hash, file_path, field_id, field_name, field_value_str/int/float, ...)
     end
     Note over Pipeline,DB: Core git_commit_files rows unchanged
 ```
@@ -723,7 +723,7 @@ INSERT INTO github_graphql_cache (
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `tenant_id` | UUID | REQUIRED | Tenant identifier — injected by framework |
-| `source_instance_id` | String | REQUIRED | Source instance identifier (e.g. `github-acme-prod`) |
+| `insight_source_id` | String | REQUIRED | Source instance identifier (e.g. `github-acme-prod`) |
 | `id` | Int64 | PRIMARY KEY | Auto-generated unique identifier |
 | `project_key` | String | REQUIRED | Repository owner (org login) — joins to `git_commit_files.project_key` |
 | `repo_slug` | String | REQUIRED | Repository name — joins to `git_commit_files.repo_slug` |
@@ -741,7 +741,7 @@ INSERT INTO github_graphql_cache (
 **PK**: `id`
 
 **Indexes**:
-- `idx_commit_file_ext_lookup`: `(tenant_id, source_instance_id, project_key, repo_slug, commit_hash, file_path, field_id, data_source)`
+- `idx_commit_file_ext_lookup`: `(tenant_id, insight_source_id, project_key, repo_slug, commit_hash, file_path, field_id, data_source)`
 - `idx_file_ext_field_id`: `(field_id)`
 
 **Populated by**: AI detection pipeline and ScanCode pipeline (separate from the GitHub connector). The GitHub connector itself does NOT write to this table; it provides the anchor rows in `git_commit_files` that enrichment pipelines join against.
@@ -839,7 +839,7 @@ User-Agent: insight-github-connector/1.0
 ```python
 {
     'tenant_id': config.tenant_id,
-    'source_instance_id': config.source_instance_id,
+    'insight_source_id': config.insight_source_id,
     'project_key': api_data['owner']['login'],           # org login (e.g., "myorg")
     'repo_slug': api_data['name'],                       # repo name (e.g., "my-repo")
     'repo_uuid': str(api_data.get('id')),
@@ -865,7 +865,7 @@ User-Agent: insight-github-connector/1.0
 ```python
 {
     'tenant_id': config.tenant_id,
-    'source_instance_id': config.source_instance_id,
+    'insight_source_id': config.insight_source_id,
     'project_key': owner,
     'repo_slug': repo,
     'commit_hash': commit_node['oid'],
@@ -897,7 +897,7 @@ User-Agent: insight-github-connector/1.0
 for file_data in rest_commit['files']:
     {
         'tenant_id': config.tenant_id,
-        'source_instance_id': config.source_instance_id,
+        'insight_source_id': config.insight_source_id,
         'project_key': owner,
         'repo_slug': repo,
         'commit_hash': commit_hash,
@@ -919,7 +919,7 @@ for file_data in rest_commit['files']:
 ```python
 {
     'tenant_id': config.tenant_id,
-    'source_instance_id': config.source_instance_id,
+    'insight_source_id': config.insight_source_id,
     'project_key': owner,
     'repo_slug': repo,
     'pr_id': pr_node['databaseId'],
@@ -957,7 +957,7 @@ for file_data in rest_commit['files']:
 for review in pr_node['reviews']['nodes']:
     {
         'tenant_id': config.tenant_id,
-        'source_instance_id': config.source_instance_id,
+        'insight_source_id': config.insight_source_id,
         'project_key': owner,
         'repo_slug': repo,
         'pr_id': pr_node['databaseId'],
@@ -991,7 +991,7 @@ For each PR, the connector calls `GET /repos/{owner}/{repo}/pulls/{number}/commi
 for commit in rest_pr_commits:
     {
         'tenant_id': config.tenant_id,
-        'source_instance_id': config.source_instance_id,
+        'insight_source_id': config.insight_source_id,
         'project_key': owner,
         'repo_slug': repo,
         'pr_id': pr_id,
@@ -1001,7 +1001,7 @@ for commit in rest_pr_commits:
     }
 ```
 
-This REST call uses the existing `RestApiClient.paginate_link()` loop. The junction rows are upserted keyed on `(tenant_id, source_instance_id, project_key, repo_slug, pr_id, commit_hash, data_source)`.
+This REST call uses the existing `RestApiClient.paginate_link()` loop. The junction rows are upserted keyed on `(tenant_id, insight_source_id, project_key, repo_slug, pr_id, commit_hash, data_source)`.
 
 ---
 
@@ -1022,7 +1022,7 @@ ext_properties = [
 for prop in ext_properties:
     prop.update({
         'tenant_id': config.tenant_id,
-        'source_instance_id': config.source_instance_id,
+        'insight_source_id': config.insight_source_id,
         'project_key': owner,
         'repo_slug': repo,
         'data_source': 'insight_github',
@@ -1030,7 +1030,7 @@ for prop in ext_properties:
     })
 ```
 
-Each row is upserted to `git_repositories_ext` keyed on `(tenant_id, source_instance_id, project_key, repo_slug, field_id, data_source)`.
+Each row is upserted to `git_repositories_ext` keyed on `(tenant_id, insight_source_id, project_key, repo_slug, field_id, data_source)`.
 
 ---
 
@@ -1042,7 +1042,7 @@ Each row is upserted to `git_repositories_ext` keyed on `(tenant_id, source_inst
 for ticket_key in extract_ticket_references(pr_node['title'], pr_node.get('body', ''), []):
     {
         'tenant_id': config.tenant_id,
-        'source_instance_id': config.source_instance_id,
+        'insight_source_id': config.insight_source_id,
         'project_key': owner,
         'repo_slug': repo,
         'pr_id': pr_id,
@@ -1052,7 +1052,7 @@ for ticket_key in extract_ticket_references(pr_node['title'], pr_node.get('body'
     }
 ```
 
-Rows are upserted keyed on `(tenant_id, source_instance_id, project_key, repo_slug, pr_id, ticket_key, data_source)`.
+Rows are upserted keyed on `(tenant_id, insight_source_id, project_key, repo_slug, pr_id, ticket_key, data_source)`.
 
 ---
 

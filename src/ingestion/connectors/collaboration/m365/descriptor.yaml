@@ -9,7 +9,7 @@ workflow: sync
 
 # Connection config — streams to sync
 connection:
-  namespace: "bronze_${tenant_id}"
+  namespace: "bronze_m365"
   streams:
     - name: email_activity
       sync_mode: incremental_append

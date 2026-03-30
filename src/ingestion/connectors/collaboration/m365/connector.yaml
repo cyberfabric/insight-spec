@@ -144,9 +144,9 @@ streams:
               - string
               - "null"
           tenant_id:
-            type:
-              - string
-              - "null"
+            type: string
+          source_id:
+            type: string
           unique_key:
             type: string
         required:
@@ -159,12 +159,16 @@ streams:
           - type: AddedFieldDefinition
             path:
               - tenant_id
-            value: "{{ config['insights_tenant_id'] }}"
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
-              {{ record['userPrincipalName'] }}-{{ record['reportRefreshDate']
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate']
               }}
     incremental_sync:
       type: DatetimeBasedCursor
@@ -347,9 +351,9 @@ streams:
               - string
               - "null"
           tenant_id:
-            type:
-              - string
-              - "null"
+            type: string
+          source_id:
+            type: string
           unique_key:
             type: string
         required:
@@ -362,12 +366,16 @@ streams:
           - type: AddedFieldDefinition
             path:
               - tenant_id
-            value: "{{ config['insights_tenant_id'] }}"
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
-              {{ record['userPrincipalName'] }}-{{ record['reportRefreshDate']
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate']
               }}
     incremental_sync:
       type: DatetimeBasedCursor
@@ -470,9 +478,9 @@ streams:
               - string
               - "null"
           tenant_id:
-            type:
-              - string
-              - "null"
+            type: string
+          source_id:
+            type: string
           unique_key:
             type: string
         required:
@@ -485,12 +493,16 @@ streams:
           - type: AddedFieldDefinition
             path:
               - tenant_id
-            value: "{{ config['insights_tenant_id'] }}"
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
-              {{ record['userPrincipalName'] }}-{{ record['reportRefreshDate']
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate']
               }}
     incremental_sync:
       type: DatetimeBasedCursor
@@ -597,9 +609,9 @@ streams:
               - string
               - "null"
           tenant_id:
-            type:
-              - string
-              - "null"
+            type: string
+          source_id:
+            type: string
           unique_key:
             type: string
         required:
@@ -612,12 +624,16 @@ streams:
           - type: AddedFieldDefinition
             path:
               - tenant_id
-            value: "{{ config['insights_tenant_id'] }}"
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
           - type: AddedFieldDefinition
             path:
               - unique_key
             value: >-
-              {{ record['userPrincipalName'] }}-{{ record['reportRefreshDate']
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate']
               }}
     incremental_sync:
       type: DatetimeBasedCursor
@@ -644,24 +660,30 @@ spec:
       - azure_client_id
       - azure_client_secret
       - azure_tenant_id
-      - insights_tenant_id
+      - insight_tenant_id
+      - insight_source_id
     properties:
+      insight_tenant_id:
+        type: string
+        description: Insight platform tenant ID
+        order: 0
+        title: Insight Tenant ID
+      insight_source_id:
+        type: string
+        description: Insight source instance ID (e.g. m365-main)
+        order: 1
+        title: Insight Source ID
       azure_client_id:
         type: string
-        order: 0
+        order: 2
         title: Azure Client ID
       azure_tenant_id:
         type: string
-        order: 2
-        title: Azure Tenant ID
-      insights_tenant_id:
-        type: string
-        description: Tenant isolation identifier for the ingestion layer
         order: 3
-        title: Insights Tenant ID
+        title: Azure Tenant ID
       azure_client_secret:
         type: string
-        order: 1
+        order: 4
         title: Azure Client Secret
         airbyte_secret: true
     additionalProperties: true

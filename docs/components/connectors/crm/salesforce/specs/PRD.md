@@ -163,7 +163,7 @@ Salesforce customers heavily customize their schemas with custom fields (`__c` s
 - Identity resolution via `email` from user directory
 - OAuth 2.0 (Connected App) and username/password + security token authentication
 - All timestamps normalized to UTC
-- `source_instance_id`, `tenant_id`, and `data_source = 'insight_salesforce'` stamped on every record
+- `insight_source_id`, `tenant_id`, and `data_source = 'insight_salesforce'` stamped on every record
 - Sandbox vs. production org detection during connection configuration
 
 ### 4.2 Out of Scope
@@ -337,13 +337,13 @@ The connector **MUST** produce a collection run log entry for each execution, re
 
 Each stream **MUST** define a primary key that ensures re-running the connector for an overlapping date range does not produce duplicate records.
 
-The connector **MUST** generate a surrogate URN-based primary key for entity records in the format `urn:salesforce:{tenant_id}:{source_instance_id}:{record_id}`. The original `source_instance_id`, `tenant_id`, and Salesforce 18-char ID fields **MUST** be preserved as separate columns for filtering and joins. The URN key eliminates the need for composite key joins in downstream analytics.
+The connector **MUST** generate a surrogate URN-based primary key for entity records in the format `urn:salesforce:{tenant_id}:{insight_source_id}:{record_id}`. The original `insight_source_id`, `tenant_id`, and Salesforce 18-char ID fields **MUST** be preserved as separate columns for filtering and joins. The URN key eliminates the need for composite key joins in downstream analytics.
 
-Custom field ext streams use `(source_instance_id, entity_id, field_api_name)` as the composite key.
+Custom field ext streams use `(insight_source_id, entity_id, field_api_name)` as the composite key.
 
 The Airbyte sync mode for all entity streams (contacts, accounts, opportunities, activities, opportunity history) **MUST** be **Incremental | Append + Deduped** (upsert/merge semantics). The `salesforce_users` stream **MUST** use **Full Refresh | Append** with SCD Type 2 handling (see `cpt-insightspec-fr-sf-user-scd`). The `salesforce_deleted_records` stream **MUST** use **Incremental | Append**.
 
-**Rationale**: Without explicit upsert semantics, overlapping incremental windows produce duplicate rows. URN-based surrogate keys provide unambiguous cross-org identity while keeping component fields available for filtering, matching the pattern established by the Jira connector (`urn:jira:{tenant_id}:{source_instance_id}:{issue_key}`).
+**Rationale**: Without explicit upsert semantics, overlapping incremental windows produce duplicate rows. URN-based surrogate keys provide unambiguous cross-org identity while keeping component fields available for filtering, matching the pattern established by the Jira connector (`urn:jira:{tenant_id}:{insight_source_id}:{issue_key}`).
 
 **Actors**: `cpt-insightspec-actor-sf-api`
 
@@ -363,7 +363,7 @@ The connector **MUST** support incremental collection using the `LastModifiedDat
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-sf-deleted-records`
 
-The connector **MUST** provide a `salesforce_deleted_records` stream that uses the Salesforce `queryAll` endpoint with `WHERE IsDeleted = true AND SystemModstamp > {cursor}` to capture soft-deleted records (those in the Salesforce Recycle Bin). Each record **MUST** include: object type (`Contact` / `Account` / `Opportunity` / `Task` / `Event`), record ID, deletion timestamp (`SystemModstamp`), `source_instance_id`, and `tenant_id`.
+The connector **MUST** provide a `salesforce_deleted_records` stream that uses the Salesforce `queryAll` endpoint with `WHERE IsDeleted = true AND SystemModstamp > {cursor}` to capture soft-deleted records (those in the Salesforce Recycle Bin). Each record **MUST** include: object type (`Contact` / `Account` / `Opportunity` / `Task` / `Event`), record ID, deletion timestamp (`SystemModstamp`), `insight_source_id`, and `tenant_id`.
 
 The downstream Silver pipeline uses this stream to mark corresponding Bronze records as deleted (soft-delete flag or tombstone) rather than leaving stale "active" records in analytics.
 
@@ -418,9 +418,9 @@ The Identity Manager (Silver step 2) resolves identity as follows:
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-sf-instance-context`
 
-Every record emitted by the connector **MUST** include `source_instance_id` (identifying the specific Salesforce org), `tenant_id` (identifying the Insight tenant), and `data_source` (set to `insight_salesforce` for all records). These fields are required for multi-instance disambiguation, tenant isolation, and source identification when Salesforce data merges with HubSpot data in unified `class_crm_*` Silver tables.
+Every record emitted by the connector **MUST** include `insight_source_id` (identifying the specific Salesforce org), `tenant_id` (identifying the Insight tenant), and `data_source` (set to `insight_salesforce` for all records). These fields are required for multi-instance disambiguation, tenant isolation, and source identification when Salesforce data merges with HubSpot data in unified `class_crm_*` Silver tables.
 
-**Rationale**: Multiple Salesforce orgs (production, sandbox, acquired companies) may feed into the same Bronze store. Without `source_instance_id`, Salesforce 18-char IDs could collide across orgs. The `data_source` field enables the Silver pipeline to distinguish Salesforce-originated records from HubSpot-originated records in the unified CRM schema, matching the pattern established by the Slack connector (`data_source = 'insight_slack'`).
+**Rationale**: Multiple Salesforce orgs (production, sandbox, acquired companies) may feed into the same Bronze store. Without `insight_source_id`, Salesforce 18-char IDs could collide across orgs. The `data_source` field enables the Silver pipeline to distinguish Salesforce-originated records from HubSpot-originated records in the unified CRM schema, matching the pattern established by the Slack connector (`data_source = 'insight_slack'`).
 
 **Actors**: `cpt-insightspec-actor-sf-operator`
 
@@ -538,7 +538,7 @@ All timestamps persisted in the Bronze layer **MUST** be stored in UTC (ISO 8601
 3. For username/password: operator provides username, password, and security token
 4. System validates credentials against the Salesforce API (`/services/data/`)
 5. System discovers the Salesforce org instance URL, API version, and org type (production vs. sandbox) from the OAuth token response or instance URL pattern
-6. If sandbox detected: system displays a warning that sandbox data may duplicate production records and labels the connection as `sandbox` in `source_instance_id` metadata
+6. If sandbox detected: system displays a warning that sandbox data may duplicate production records and labels the connection as `sandbox` in `insight_source_id` metadata
 7. System queries the Describe API for each target object and validates Field-Level Security (FLS) coverage — reports any schema-defined fields that are not visible to the authenticated user
 8. System presents available objects and custom field metadata
 9. Operator confirms object scope (default: all standard objects + all `__c` fields on Opportunity and Contact)
@@ -603,8 +603,8 @@ All timestamps persisted in the Bronze layer **MUST** be stored in UTC (ISO 8601
 - [ ] Custom field values (`__c`) extracted for Opportunities and Contacts as key-value pairs; compound fields serialized as JSON
 - [ ] Incremental sync on second run extracts only newly modified records (no full reload)
 - [ ] `owner_id` joins to `salesforce_users.user_id` in all user-attributed records
-- [ ] URN-based surrogate primary keys (`urn:salesforce:{tenant_id}:{source_instance_id}:{record_id}`) on all entity streams
-- [ ] `source_instance_id`, `tenant_id`, and `data_source = 'insight_salesforce'` present in all records
+- [ ] URN-based surrogate primary keys (`urn:salesforce:{tenant_id}:{insight_source_id}:{record_id}`) on all entity streams
+- [ ] `insight_source_id`, `tenant_id`, and `data_source = 'insight_salesforce'` present in all records
 - [ ] All timestamps stored in UTC
 - [ ] Source-native PascalCase field names preserved in all Bronze tables (snake_case normalization at Silver)
 - [ ] FLS coverage validated at connection configuration; hidden fields logged as warnings
@@ -661,7 +661,7 @@ All timestamps persisted in the Bronze layer **MUST** be stored in UTC (ISO 8601
 | Tasks vs Events Silver merge complexity | Two separate Bronze streams must be unified into `class_crm_activities` at Silver with shared semantics | Silver dbt model maps Task-specific fields (status, call_type) and Event-specific fields (duration, start_datetime) into a unified schema with `activity_type` discriminator. This is standard cross-source normalization, same as HubSpot engagement types |
 | OAuth token expiration | Connected App refresh tokens can be revoked by admin or expire based on org policy | Implement token refresh with `refresh_token`; alert operator on authentication failures; support re-authorization flow |
 | Profile.Name permission dependency | Relationship query for user profile requires elevated permissions; may fail silently | Emit `null` for profile field when unavailable; log warning; document permission requirements |
-| Multi-org ID collisions | Multiple Salesforce orgs (production + sandbox) may have overlapping 18-char IDs for different records | Require `source_instance_id` in all joins; composite scope ensures unique identification |
+| Multi-org ID collisions | Multiple Salesforce orgs (production + sandbox) may have overlapping 18-char IDs for different records | Require `insight_source_id` in all joins; composite scope ensures unique identification |
 | Soft-deleted records inflating pipeline | Standard SOQL excludes soft-deleted records; without deletion detection, deleted Opportunities remain "active" in Bronze, artificially inflating pipeline value | Dedicated `salesforce_deleted_records` stream via `queryAll` with `IsDeleted = true` captures soft-deletes day-to-day — see FR `cpt-insightspec-fr-sf-deleted-records`. Permanently purged records (after 15-day Recycle Bin retention) require periodic full reconciliation |
 | Custom field unnest requires Python components | Declarative YAML cannot dynamically expand a variable-length `__c` field dictionary into separate key-value rows | DESIGN must specify the implementation path: custom `RecordExtractor`, hybrid manifest with Python components, or full Python CDK migration — see architectural constraints on FR `cpt-insightspec-fr-sf-opportunity-custom-fields` |
 | `owner_id` references inactive users | Deactivated users still own historical records; the user directory must include inactive users | Extract all users regardless of `is_active` status; filter active/inactive at analytics layer |

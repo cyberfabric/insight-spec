@@ -175,8 +175,8 @@ for connector_name, creds in tenant.get("connectors", {}).items():
     if not source_id:
         # Fill in tenant_id in credentials
         config = dict(creds)
-        if "insights_tenant_id" not in config or config["insights_tenant_id"] == "${tenant_id}":
-            config["insights_tenant_id"] = tenant_id
+        if "insight_tenant_id" not in config or config["insight_tenant_id"] == "${tenant_id}":
+            config["insight_tenant_id"] = tenant_id
 
         source_id = find_or_create(
             "source",

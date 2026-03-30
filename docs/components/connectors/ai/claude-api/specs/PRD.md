@@ -276,7 +276,7 @@ The connector **MUST** record each execution run with `run_id`, `started_at`, `c
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-claude-api-framework-fields`
 
-All records across all streams **MUST** include `tenant_id` (from config), `source_instance_id` (from config, default empty string), `collected_at` (collection timestamp), `data_source` (`insight_claude_api`), `_version` (deduplication version), and `metadata` (full API response as JSON string).
+All records across all streams **MUST** include `tenant_id` (from config), `insight_source_id` (from config, default empty string), `collected_at` (collection timestamp), `data_source` (`insight_claude_api`), `_version` (deduplication version), and `metadata` (full API response as JSON string).
 
 **Rationale**: Framework fields enable multi-tenant isolation, deduplication, and forward-compatible schema evolution.
 **Actors**: `cpt-insightspec-actor-claude-api-platform-eng`
@@ -430,7 +430,7 @@ Repeated collection of the same date range **MUST NOT** create duplicate rows. T
 
 **Main Flow**:
 1. Platform Engineer creates a new connection in Airbyte, selecting the `claude-api` source type.
-2. Engineer provides `tenant_id`, `admin_api_key`, and optionally `source_instance_id` and `start_date`.
+2. Engineer provides `tenant_id`, `admin_api_key`, and optionally `insight_source_id` and `start_date`.
 3. Airbyte executes the check connection flow by reading the `claude_api_workspaces` stream.
 4. On success, the connection is saved and scheduled.
 
@@ -476,7 +476,7 @@ Repeated collection of the same date range **MUST NOT** create duplicate rows. T
 - [ ] All workspaces are present in `claude_api_workspaces` with `data_residency` nested fields intact.
 - [ ] All invites are present in `claude_api_invites`.
 - [ ] `data_source = 'insight_claude_api'` is set on every row written by this connector.
-- [ ] `tenant_id` and `source_instance_id` are present on every row.
+- [ ] `tenant_id` and `insight_source_id` are present on every row.
 - [ ] A second sync run (incremental) for usage/cost completes without creating duplicate rows.
 - [ ] An incremental sync fetches only data for dates not yet collected.
 - [ ] Full refresh streams (keys, workspaces, invites) correctly overwrite stale data.

@@ -9,4 +9,4 @@ SELECT
     sendCount AS emails_sent,
     reportRefreshDate AS activity_date,
     'ms365' AS source
-FROM {{ source('bronze_example_tenant', 'email_activity') }}
+FROM {{ source('bronze_m365', 'email_activity') }}

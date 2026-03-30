@@ -62,19 +62,19 @@ Every record emitted by every connector MUST contain these fields:
 
 ### unique_key
 
-`unique_key` is a composite string that uniquely identifies a record within the platform. It MUST include `source_id` to avoid collisions between tenants and connector instances.
+`unique_key` is a composite string that uniquely identifies a record within the platform. It MUST include `tenant_id` and `source_id` to avoid collisions between tenants and connector instances.
 
 Pattern:
 
 ```
-{{ config['insight_source_id'] }}-{{ record['field1'] }}-{{ record['field2'] }}
+{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['field1'] }}-{{ record['field2'] }}
 ```
 
 Real example (M365 email_activity):
 
 ```yaml
 - path: [unique_key]
-  value: "{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate'] }}"
+  value: "{{ config['insight_tenant_id'] }}-{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate'] }}"
 ```
 
 The fields composing the key depend on the source. Choose fields that together form a natural primary key in the source system.
@@ -186,7 +186,7 @@ Rules:
 
 - `additionalProperties: true` on every schema for forward compatibility
 - `tenant_id`, `source_id`, and `unique_key` are required string fields in every schema
-- Nullable source fields use `type: [string, "null"]` or `type: [number, "null"]`
+- Use nullable types (`type: [string, "null"]`) only where the API actually returns null values. Do not make all fields nullable by default
 - Do not invent fields -- derive from real API responses via `generate-schema.sh`
 
 ## 5. Connector Package Structure
@@ -253,7 +253,7 @@ dbt_select: "tag:m365"
 
 # Connection config (used by apply-connections.sh)
 connection:
-  namespace: "bronze_${tenant_id}"
+  namespace: "bronze_m365"
   streams:
     - name: email_activity
       sync_mode: full_refresh_overwrite
@@ -286,7 +286,7 @@ Field reference:
 | `schedule` | Yes | Cron expression for automated sync |
 | `workflow` | Yes | Workflow template name |
 | `dbt_select` | Yes | dbt selector for transformations |
-| `connection.namespace` | Yes | ClickHouse database per tenant (`bronze_${tenant_id}`) |
+| `connection.namespace` | Yes | ClickHouse database per connector (`bronze_{name}`, e.g. `bronze_m365`) |
 | `connection.streams` | Yes | Streams to sync with their sync mode |
 | `silver_targets` | Yes | Silver tables this connector populates |
 | `streams` | Yes | Stream definitions with bronze_table, primary_key, cursor_field |
@@ -351,7 +351,7 @@ streams:
           - path: [source_id]
             value: "{{ config['insight_source_id'] }}"
           - path: [unique_key]
-            value: "{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate'] }}"
+            value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate'] }}"
     incremental_sync:
       # ...
 
@@ -485,7 +485,7 @@ transformations:
         value: "{{ config['insight_source_id'] }}"
       - type: AddedFieldDefinition
         path: [unique_key]
-        value: "{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate'] }}"
+        value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['userPrincipalName'] }}-{{ record['reportRefreshDate'] }}"
 ```
 
 ### 7.6 Record Extraction
@@ -564,7 +564,7 @@ class Stream1(HttpStream):
         for record in response.json()["data"]:
             record["tenant_id"] = self.tenant_id
             record["source_id"] = self.source_id
-            record["unique_key"] = f"{self.source_id}-{record['id']}"
+            record["unique_key"] = f"{self.tenant_id}-{self.source_id}-{record['id']}"
             yield record
 ```
 
@@ -769,7 +769,7 @@ AIRBYTE_CONFIG='{"insight_tenant_id":"acme","insight_source_id":"m365-prod","azu
 | `AIRBYTE_CONFIG is not valid JSON` | `.env.local` has shell-escaped quotes | Use raw JSON without surrounding shell quotes |
 | Builder UI shows wrong test values after upload | Airbyte rebuilds test config from spec on manifest update | Re-enter test values manually in Builder UI |
 | Records missing `tenant_id` | Forgot `AddFields` transformation | Add `AddFields` with `insight_tenant_id` to every stream |
-| Duplicate records across instances | `unique_key` does not include `source_id` | Prefix `unique_key` with `config['insight_source_id']` |
+| Duplicate records across instances | `unique_key` does not include `tenant_id` + `source_id` | Prefix `unique_key` with `config['insight_tenant_id']` + `config['insight_source_id']` |
 | Config collision (`tenant_id` ambiguous) | Bare field name without prefix | Use `insight_tenant_id`, `azure_tenant_id`, etc. |
 
 ## 15. Traceability
