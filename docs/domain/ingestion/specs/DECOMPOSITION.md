@@ -387,6 +387,12 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
   - BronzeTable
   - Descriptor
 
+- **Database Tables**:
+
+  - [ ] `p1` - `cpt-insightspec-dbtable-cn-bronze`
+  - [ ] `p1` - `cpt-insightspec-dbtable-cn-staging`
+  - [ ] `p1` - `cpt-insightspec-dbtable-cn-silver`
+
 - **Design Components**:
 
   - [ ] `p1` - `cpt-insightspec-component-ing-dbt`
