@@ -150,15 +150,22 @@ for connector_name, creds in tenant.get("connectors", {}).items():
             continue
     conn_state["destination_id"] = dest_id
 
-    # Find source definition ID
+    # Find source definition ID (prefer exact name match over case-insensitive)
     def_id = conn_state.get("definition_id")
     if not def_id:
         defs = api("POST", "/api/v1/source_definitions/list", {"workspaceId": workspace_id})
         if defs:
+            # Exact match first (our custom connectors use lowercase names)
             for d in defs.get("sourceDefinitions", []):
-                if d["name"].lower() == connector_name.lower():
+                if d["name"] == connector_name:
                     def_id = d["sourceDefinitionId"]
                     break
+            # Fallback to case-insensitive
+            if not def_id:
+                for d in defs.get("sourceDefinitions", []):
+                    if d["name"].lower() == connector_name.lower():
+                        def_id = d["sourceDefinitionId"]
+                        break
     if not def_id:
         print(f"    SKIP: source definition not found for {connector_name} (run upload-manifests first)")
         continue
