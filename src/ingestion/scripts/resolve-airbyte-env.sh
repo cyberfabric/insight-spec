@@ -9,7 +9,12 @@ set -euo pipefail
 
 # KUBECONFIG can be empty when running in-cluster (uses service account)
 
-AIRBYTE_API="${AIRBYTE_API:-http://localhost:8000}"
+# Auto-detect: use in-cluster service URL if running in K8s, else localhost
+if [[ -f /var/run/secrets/kubernetes.io/serviceaccount/token ]]; then
+  export AIRBYTE_API="${AIRBYTE_API:-http://airbyte-airbyte-server-svc.airbyte.svc.cluster.local:8001}"
+else
+  export AIRBYTE_API="${AIRBYTE_API:-http://localhost:8000}"
+fi
 
 # Read secrets
 _secret_json=$(kubectl get secret -n airbyte airbyte-auth-secrets -o json 2>/dev/null) || {

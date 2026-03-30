@@ -73,59 +73,19 @@ def find_or_create(resource_type, list_path, list_key, create_path, create_data,
     print(f"  ERROR: could not create {resource_type}", file=sys.stderr)
     return None
 
-# --- ClickHouse destination ---
-dest_name = f"clickhouse-{tenant_id}"
-print(f"  Destination: {dest_name}")
-
-# Check if already exists
-dest_id = state.get("destination_id")
-if not dest_id:
-    existing = api("POST", "/api/v1/destinations/list", {"workspaceId": workspace_id})
-    if existing:
-        for d in existing.get("destinations", []):
-            if d["name"] == dest_name:
-                dest_id = d["destinationId"]
-                print(f"    Found existing: {dest_id}")
+# --- Lookup ClickHouse definition ID (shared across connectors) ---
+ch_def_id = state.get("clickhouse_definition_id")
+if not ch_def_id:
+    defs = api("POST", "/api/v1/destination_definitions/list", {"workspaceId": workspace_id})
+    if defs:
+        for d in defs.get("destinationDefinitions", []):
+            if "clickhouse" in d["name"].lower():
+                ch_def_id = d["destinationDefinitionId"]
                 break
-
-# Create if not found
-if not dest_id:
-    # Lookup ClickHouse definition ID
-    ch_def_id = state.get("clickhouse_definition_id")
-    if not ch_def_id:
-        defs = api("POST", "/api/v1/destination_definitions/list", {"workspaceId": workspace_id})
-        if defs:
-            for d in defs.get("destinationDefinitions", []):
-                if "clickhouse" in d["name"].lower():
-                    ch_def_id = d["destinationDefinitionId"]
-                    print(f"    ClickHouse definition: {ch_def_id}")
-                    break
-    if not ch_def_id:
-        print("  ERROR: ClickHouse destination definition not found in Airbyte", file=sys.stderr)
-        sys.exit(1)
-    state["clickhouse_definition_id"] = ch_def_id
-
-    result = api("POST", "/api/v1/destinations/create", {
-        "workspaceId": workspace_id,
-        "name": dest_name,
-        "destinationDefinitionId": ch_def_id,
-        "connectionConfiguration": {
-            "host": dest_config.get("host", "clickhouse.data.svc.cluster.local"),
-            "port": str(dest_config.get("port", 8123)),
-            "database": "default",
-            "username": dest_config.get("username", "default"),
-            "password": dest_config.get("password", "clickhouse"),
-            "protocol": "http",
-        }
-    })
-    if result and "destinationId" in result:
-        dest_id = result["destinationId"]
-        print(f"    Created: {dest_id}")
-    else:
-        print(f"  ERROR: could not create destination: {result}", file=sys.stderr)
-        sys.exit(1)
-
-state["destination_id"] = dest_id
+if not ch_def_id:
+    print("  ERROR: ClickHouse destination definition not found in Airbyte", file=sys.stderr)
+    sys.exit(1)
+state["clickhouse_definition_id"] = ch_def_id
 
 # --- Per-connector sources + connections ---
 state.setdefault("connectors", {})
@@ -155,6 +115,40 @@ for connector_name, creds in tenant.get("connectors", {}).items():
     db_name = descriptor.get("connection", {}).get("namespace", f"bronze_{connector_name}")
     print(f"    Creating database: {db_name}")
     os.system(f'kubectl exec -n data deploy/clickhouse -- clickhouse-client --password clickhouse --query "CREATE DATABASE IF NOT EXISTS {db_name}" 2>/dev/null')
+
+    # Create/find per-connector destination (database = bronze_{name})
+    dest_name = f"clickhouse-{connector_name}"
+    dest_id = conn_state.get("destination_id")
+    if not dest_id:
+        existing = api("POST", "/api/v1/destinations/list", {"workspaceId": workspace_id})
+        if existing:
+            for d in existing.get("destinations", []):
+                if d["name"] == dest_name:
+                    dest_id = d["destinationId"]
+                    print(f"    Destination found: {dest_id}")
+                    break
+    if not dest_id:
+        result = api("POST", "/api/v1/destinations/create", {
+            "workspaceId": workspace_id,
+            "name": dest_name,
+            "destinationDefinitionId": ch_def_id,
+            "connectionConfiguration": {
+                "host": dest_config.get("host", "clickhouse.data.svc.cluster.local"),
+                "port": str(dest_config.get("port", 8123)),
+                "database": db_name,
+                "username": dest_config.get("username", "default"),
+                "password": dest_config.get("password", "clickhouse"),
+                "protocol": "http",
+                "enable_json": True,
+            }
+        })
+        if result and "destinationId" in result:
+            dest_id = result["destinationId"]
+            print(f"    Destination created: {dest_id}")
+        else:
+            print(f"    ERROR: could not create destination for {connector_name}: {result}", file=sys.stderr)
+            continue
+    conn_state["destination_id"] = dest_id
 
     # Find source definition ID
     def_id = conn_state.get("definition_id")
@@ -202,24 +196,46 @@ for connector_name, creds in tenant.get("connectors", {}).items():
     connection_id = conn_state.get("connection_id")
 
     if not connection_id:
-        namespace = connection_config.get("namespace", f"bronze_{connector_name}")
-        streams = connection_config.get("streams", [])
+        configured_streams = connection_config.get("streams", [])
+        configured_names = {s["name"] for s in configured_streams}
 
-        # Build catalog for connection
+        # Discover real schema from source
+        print(f"    Discovering schema from source...")
+        discover_result = api("POST", "/api/v1/sources/discover_schema", {
+            "sourceId": source_id,
+            "disable_cache": True,
+        })
+
+        # Build catalog from discovered schema + configured streams
         sync_catalog = {"streams": []}
-        for s in streams:
-            sync_catalog["streams"].append({
-                "stream": {
-                    "name": s["name"],
-                    "jsonSchema": {},
-                    "supportedSyncModes": ["full_refresh", "incremental"],
-                },
-                "config": {
-                    "syncMode": "incremental" if "incremental" in s.get("sync_mode", "") else "full_refresh",
-                    "destinationSyncMode": "append",
+        if discover_result and "catalog" in discover_result:
+            for entry in discover_result["catalog"].get("streams", []):
+                stream_name = entry.get("name", "")
+                # Include all streams if no explicit list, otherwise filter
+                if configured_names and stream_name not in configured_names:
+                    continue
+
+                sync_mode = "incremental" if "incremental" in entry.get("supportedSyncModes", []) else "full_refresh"
+                dest_sync_mode = "append_dedup" if sync_mode == "incremental" else "overwrite"
+
+                stream_config = {
+                    "syncMode": sync_mode,
+                    "destinationSyncMode": dest_sync_mode,
                     "selected": True,
                 }
-            })
+                # Use source-defined primary key and cursor if available
+                if entry.get("sourceDefinedPrimaryKey"):
+                    stream_config["primaryKey"] = entry["sourceDefinedPrimaryKey"]
+                if entry.get("defaultCursorField"):
+                    stream_config["cursorField"] = entry["defaultCursorField"]
+
+                sync_catalog["streams"].append({
+                    "stream": entry,
+                    "config": stream_config,
+                })
+                print(f"      Stream: {stream_name} ({sync_mode})")
+        else:
+            print(f"    WARNING: discover failed, creating connection without catalog")
 
         connection_id = find_or_create(
             "connection",
@@ -229,8 +245,7 @@ for connector_name, creds in tenant.get("connectors", {}).items():
                 "sourceId": source_id,
                 "destinationId": dest_id,
                 "name": connection_name,
-                "namespaceDefinition": "customformat",
-                "namespaceFormat": namespace,
+                "namespaceDefinition": "destination",
                 "status": "active",
                 "syncCatalog": sync_catalog,
             },
