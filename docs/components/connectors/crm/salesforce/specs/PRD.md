@@ -238,9 +238,9 @@ The connector **MUST** extract Salesforce Event records into a dedicated Bronze 
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-sf-polymorphic-resolution`
 
-Both Task and Event streams **MUST** include `who_type` and `what_type` discriminator fields that resolve the Salesforce polymorphic `WhoId` and `WhatId` references to their object types (e.g., Contact, Lead, Account, Opportunity). The connector **MUST NOT** leave `who_type` or `what_type` as null when the corresponding ID field is non-null.
+Task and Event streams extract raw `WhoId` and `WhatId` polymorphic references at Bronze. Polymorphic resolution to specific object types (Contact, Lead, Account, Opportunity) is performed at Silver using Salesforce ID key prefixes (e.g., `003` = Contact, `006` = Opportunity, `001` = Account). The Silver transformation **MUST** derive `contact_id`, `deal_id`, and `account_id` from `WhoId`/`WhatId` based on these prefixes.
 
-**Rationale**: Without type discriminators, downstream analytics require trial-and-error JOINs across all possible target tables to determine what entity an activity relates to.
+**Rationale**: Salesforce ID key prefixes are stable and well-documented. Resolving at Silver (dbt) avoids adding custom Python logic to the declarative connector while still providing unambiguous entity references for downstream analytics.
 
 **Actors**: `cpt-insightspec-actor-sf-api`, `cpt-insightspec-actor-sf-analyst`
 
@@ -626,7 +626,7 @@ Tasks and Events are separate streams, merged at Silver. All entity streams incl
 | Field-Level Security (FLS) | FLS-restricted fields are silently absent from API responses | Validate FLS coverage at configuration; log hidden fields; emit `null` for missing fields — see FR `cpt-insightspec-fr-sf-fls-validation` |
 | Sandbox data pollution | Sandbox orgs connected alongside production produce duplicate or stale records | Detect sandbox vs. production at connection time; label connections; warn operators |
 | Email reuse on deactivated accounts | Email reassigned to new hire creates identity resolution collisions | SCD Type 2 at Silver maintains temporal bounds for disambiguation — see FR `cpt-insightspec-fr-sf-user-scd` |
-| Polymorphic references | Activity `WhoId`/`WhatId` reference multiple object types; without type discriminators, joins are ambiguous | `who_type` and `what_type` discriminator fields required — see FR `cpt-insightspec-fr-sf-polymorphic-resolution` |
+| Polymorphic references | Activity `WhoId`/`WhatId` reference multiple object types; without type discriminators, joins are ambiguous | Resolved at Silver via Salesforce ID key prefixes (`003`=Contact, `006`=Opportunity, `001`=Account) — see FR `cpt-insightspec-fr-sf-polymorphic-resolution` |
 | Multi-currency amounts | Orgs with Multi-Currency store amounts in different currencies per Opportunity | `CurrencyIsoCode` collected where available; Silver normalizes to common currency |
 | API version deprecation | Salesforce retires API versions ~3 years after release | Monitor release calendar; update connector before version reaches end-of-life |
 | OpportunityFieldHistory not enabled | Field History Tracking must be explicitly enabled in Salesforce Setup | Warn operator if history tracking is disabled; empty stream is expected |
