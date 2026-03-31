@@ -19,9 +19,10 @@ CONNECTORS_DIR="${INGESTION_DIR}/connectors"
 TOOLS_DIR="${INGESTION_DIR}/tools/declarative-connector"
 
 connector_input="${1:-}"
+tenant="${2:-}"
 if [[ -z "${connector_input}" ]]; then
-  echo "Usage: $0 <connector-name>" >&2
-  echo "  e.g.: $0 m365" >&2
+  echo "Usage: $0 <connector-name> [tenant]" >&2
+  echo "  e.g.: $0 m365 example-tenant" >&2
   echo "  e.g.: $0 collaboration/m365" >&2
   exit 1
 fi
@@ -40,25 +41,21 @@ else
 fi
 
 manifest_path="${connector_dir}/connector.yaml"
-env_file="${connector_dir}/.env.local"
 
 if [[ ! -f "${manifest_path}" ]]; then
   echo "ERROR: Manifest not found: ${manifest_path}" >&2
   exit 1
 fi
 
-if [[ ! -f "${env_file}" ]]; then
-  echo "ERROR: Credentials not found: ${env_file}" >&2
-  echo "  Create from template: cp ${connector_dir}/credentials.yaml.example ${env_file}" >&2
-  exit 1
-fi
-
 echo "Discovering streams for ${connector_path}..." >&2
 
 # --- Run discover via source.sh ---
-discover_output=$("${TOOLS_DIR}/source.sh" discover "${connector_path}" 2>/dev/null) || {
+discover_args=("${TOOLS_DIR}/source.sh" discover "${connector_path}")
+[[ -n "${tenant}" ]] && discover_args+=("${tenant}")
+
+discover_output=$("${discover_args[@]}" 2>/dev/null) || {
   echo "ERROR: discover failed. Debug with:" >&2
-  echo "  ${TOOLS_DIR}/source.sh discover ${connector_path}" >&2
+  echo "  ${TOOLS_DIR}/source.sh discover ${connector_path} ${tenant:-<tenant>}" >&2
   exit 1
 }
 

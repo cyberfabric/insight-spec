@@ -155,27 +155,78 @@ def parse_response(self, response, **kwargs):
 #### 3.5 `Dockerfile`
 #### 3.6 Same descriptor.yaml, credentials.yaml.example, dbt/ as nocode
 
-## Phase 4: Verify
+## Phase 4: Validate Package Structure
 
 After creating all files, run:
 ```
 /connector validate <name>
 ```
 
-## Phase 5: Next Steps
+## Phase 5: Local Testing (MANDATORY before Airbyte)
 
-Print:
+All testing MUST happen locally first via `source.sh` before uploading to Airbyte.
+
+### 5.1 Add credentials to tenant config
+
+```yaml
+# connections/<tenant>.yaml
+connectors:
+  <name>:
+    insight_source_id: "<name>-main"
+    <credential_fields>
 ```
-Connector package created: src/ingestion/connectors/<category>/<name>/
 
-Next steps:
-1. Add credentials to connections/<tenant>.yaml:
-   connectors:
-     <name>:
-       insight_source_id: "<name>-main"
-       <credential_fields>
+### 5.2 Validate manifest structure (no API call)
 
-2. Test: /connector test <name>
-3. Generate schema: /connector schema <name>
-4. Deploy: /connector deploy <name>
+```bash
+./tools/declarative-connector/source.sh validate <category>/<name>
+```
+
+### 5.3 Check credentials against API
+
+```bash
+./tools/declarative-connector/source.sh check <category>/<name> <tenant>
+```
+
+### 5.4 Discover streams and generate schema from real data
+
+```bash
+./tools/declarative-connector/source.sh discover <category>/<name> <tenant>
+./scripts/generate-schema.sh <name>
+```
+
+This saves real JSON schemas to `connectors/<category>/<name>/schemas/`.
+
+### 5.5 Update manifest with real schema
+
+Replace InlineSchemaLoader schemas in `connector.yaml` with the generated ones from `schemas/`.
+Verify that all cursor fields exist in the schema (this prevents ClickHouse destination NPE).
+
+### 5.6 Read data locally
+
+```bash
+./scripts/generate-catalog.sh <name>
+./tools/declarative-connector/source.sh read <category>/<name> <tenant>
+```
+
+Verify every record has `tenant_id`, `source_id`, `unique_key`.
+
+### 5.7 Only then deploy to Airbyte
+
+```bash
+/connector deploy <name>
+```
+
+## Phase 6: Summary
+
+```
+Connector package created and tested: src/ingestion/connectors/<category>/<name>/
+
+Completed:
+  ✓ Package structure validated
+  ✓ Credentials checked against API
+  ✓ Streams discovered, schema generated from real data
+  ✓ Data read locally — all mandatory fields present
+
+Next: /connector deploy <name>
 ```

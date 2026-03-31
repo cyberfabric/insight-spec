@@ -658,6 +658,11 @@ schemas:
           - string
           - "null"
         format: date-time
+      end_time:
+        type:
+          - string
+          - "null"
+        format: date-time
       actual_end_at:
         type:
           - string

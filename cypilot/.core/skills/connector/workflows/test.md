@@ -76,7 +76,24 @@ Stream: email_activity (N records)
   Fields: tenant_id, source_id, unique_key, userPrincipalName, sendCount, ...
 ```
 
-## Phase 6: Summary
+## Phase 6: Verify Schema Completeness
+
+After discover, verify that ALL cursor fields exist in the schema:
+- For each stream with `incremental_sync`, check that `cursor_field` is in the stream's `json_schema.properties`
+- If missing: the field is from raw API response but not in inline schema → add it to schema and re-test
+
+```bash
+# Generate schema from real data
+./scripts/generate-schema.sh <name> <tenant>
+
+# Compare generated schema with inline schema in manifest
+# Every field in generated schema should be in manifest inline schema
+# Especially cursor fields (e.g. end_time for meetings)
+```
+
+This prevents ClickHouse destination NPE on deploy.
+
+## Phase 7: Summary
 
 ```
 === Test Results ===
@@ -87,6 +104,7 @@ Stream: email_activity (N records)
   tenant_id: PASS (present in all records)
   source_id: PASS (present in all records)
   unique_key: PASS (contains tenant_id + source_id)
+  Schema:    PASS (all cursor fields present)
 
-Next: /connector schema <name>
+Next: /connector deploy <name>
 ```

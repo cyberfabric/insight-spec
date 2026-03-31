@@ -61,40 +61,64 @@ if projects:
             existing_id = p["builderProjectId"]
             break
 
-# Delete existing if found
+# Update existing or create new
 if existing_id:
-    print(f"  Replacing '{name}'...")
-    api("POST", "/api/v1/connector_builder_projects/delete",
-        {"workspaceId": workspace_id, "builderProjectId": existing_id})
-
-# Create
-print(f"  Creating '{name}'...")
-result = api("POST", "/api/v1/connector_builder_projects/create", {
-    "workspaceId": workspace_id,
-    "builderProject": {"name": name, "draftManifest": manifest}
-})
-if not result or "builderProjectId" not in result:
-    print(f"  ERROR: create failed: {result}", file=sys.stderr)
-    sys.exit(1)
-project_id = result["builderProjectId"]
-
-# Publish
-print(f"  Publishing '{name}'...")
-pub_result = api("POST", "/api/v1/connector_builder_projects/publish", {
-    "workspaceId": workspace_id,
-    "builderProjectId": project_id,
-    "name": name,
-    "initialDeclarativeManifest": {
+    print(f"  Updating '{name}' in-place...")
+    # Update draft manifest
+    api("POST", "/api/v1/connector_builder_projects/update", {
+        "workspaceId": workspace_id,
+        "builderProjectId": existing_id,
+        "builderProject": {"name": name, "draftManifest": manifest}
+    })
+    # Update active (published) manifest — keeps same definition ID
+    api("POST", "/api/v1/connector_builder_projects/update_active_manifest", {
+        "workspaceId": workspace_id,
+        "builderProjectId": existing_id,
         "manifest": manifest,
-        "spec": {"connectionSpecification": spec},
-        "version": 1,
-        "description": name
-    }
-})
-if pub_result and "sourceDefinitionId" in pub_result:
-    print(f"  Published: definition {pub_result['sourceDefinitionId']}")
+        "spec": {"connectionSpecification": spec}
+    })
+    # Get existing definition ID
+    project_detail = api("POST", "/api/v1/connector_builder_projects/get", {
+        "workspaceId": workspace_id,
+        "builderProjectId": existing_id
+    })
+    def_id = None
+    if project_detail:
+        dm = project_detail.get("declarativeManifest", {})
+        def_id = dm.get("sourceDefinitionId") if dm else None
+    if def_id:
+        print(f"  Updated: definition {def_id}")
+    else:
+        print(f"  Updated draft+active manifest (definition ID in project)")
 else:
-    print(f"  WARN: publish response: {str(pub_result)[:200]}", file=sys.stderr)
+    # Create new
+    print(f"  Creating '{name}'...")
+    result = api("POST", "/api/v1/connector_builder_projects/create", {
+        "workspaceId": workspace_id,
+        "builderProject": {"name": name, "draftManifest": manifest}
+    })
+    if not result or "builderProjectId" not in result:
+        print(f"  ERROR: create failed: {result}", file=sys.stderr)
+        sys.exit(1)
+    project_id = result["builderProjectId"]
+
+    # Publish
+    print(f"  Publishing '{name}'...")
+    pub_result = api("POST", "/api/v1/connector_builder_projects/publish", {
+        "workspaceId": workspace_id,
+        "builderProjectId": project_id,
+        "name": name,
+        "initialDeclarativeManifest": {
+            "manifest": manifest,
+            "spec": {"connectionSpecification": spec},
+            "version": 1,
+            "description": name
+        }
+    })
+    if pub_result and "sourceDefinitionId" in pub_result:
+        print(f"  Published: definition {pub_result['sourceDefinitionId']}")
+    else:
+        print(f"  WARN: publish response: {str(pub_result)[:200]}", file=sys.stderr)
 
 print(f"  Done: {name}")
 PYTHON

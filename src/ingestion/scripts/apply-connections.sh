@@ -150,32 +150,48 @@ for connector_name, creds in tenant.get("connectors", {}).items():
             continue
     conn_state["destination_id"] = dest_id
 
-    # Find source definition ID (prefer exact name match over case-insensitive)
-    def_id = conn_state.get("definition_id")
-    if not def_id:
-        defs = api("POST", "/api/v1/source_definitions/list", {"workspaceId": workspace_id})
-        if defs:
-            # Exact match first (our custom connectors use lowercase names)
+    # Find source definition ID (prefer exact name match, use latest if duplicates)
+    old_def_id = conn_state.get("definition_id")
+    def_id = None
+    defs = api("POST", "/api/v1/source_definitions/list", {"workspaceId": workspace_id})
+    if defs:
+        # Exact match — collect all, use latest (last in list)
+        exact = [d["sourceDefinitionId"] for d in defs.get("sourceDefinitions", []) if d["name"] == connector_name]
+        if exact:
+            def_id = exact[-1]  # latest
+            if len(exact) > 1:
+                print(f"    NOTE: {len(exact)} definitions named '{connector_name}', using latest: {def_id}")
+        else:
+            # Fallback to case-insensitive
             for d in defs.get("sourceDefinitions", []):
-                if d["name"] == connector_name:
+                if d["name"].lower() == connector_name.lower():
                     def_id = d["sourceDefinitionId"]
                     break
-            # Fallback to case-insensitive
-            if not def_id:
-                for d in defs.get("sourceDefinitions", []):
-                    if d["name"].lower() == connector_name.lower():
-                        def_id = d["sourceDefinitionId"]
-                        break
     if not def_id:
         print(f"    SKIP: source definition not found for {connector_name} (run upload-manifests first)")
         continue
     conn_state["definition_id"] = def_id
 
-    # Create/find source
+    # Create/find source — recreate if definition changed
     source_name = f"{connector_name}-{tenant_id}"
     source_id = conn_state.get("source_id")
+    source_recreated = False
+
+    # Check if existing source uses outdated definition
+    if source_id and old_def_id and old_def_id != def_id:
+        print(f"    Definition changed ({old_def_id[:8]}→{def_id[:8]}), recreating source...")
+        # Delete old connection first (depends on source)
+        old_conn_id = conn_state.get("connection_id")
+        if old_conn_id:
+            api("POST", "/api/v1/connections/delete", {"connectionId": old_conn_id})
+            conn_state.pop("connection_id", None)
+        # Delete old source
+        api("POST", "/api/v1/sources/delete", {"sourceId": source_id})
+        source_id = None
+        conn_state.pop("source_id", None)
+        source_recreated = True
+
     if not source_id:
-        # Fill in tenant_id in credentials
         config = dict(creds)
         if "insight_tenant_id" not in config or config["insight_tenant_id"] == "${tenant_id}":
             config["insight_tenant_id"] = tenant_id

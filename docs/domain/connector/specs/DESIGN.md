@@ -1065,6 +1065,26 @@ WHERE e.tenant_id = t.tenant_id
 | Config collision (`tenant_id` ambiguous) | Bare field name without prefix | Use `insight_tenant_id`, `azure_tenant_id`, etc. |
 | Builder UI shows wrong test values | Airbyte rebuilds test config from spec on manifest update | Re-enter test values manually in Builder UI |
 
+### 4.15 Deployment Pitfalls
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| ClickHouse destination NPE `getCursor` | Cursor field (e.g. `end_time`) missing from inline schema | Run `generate-schema.sh`, update manifest inline schemas to match |
+| `full_refresh` + `overwrite` NPE | ClickHouse destination v2 bug | Always use `destinationSyncMode: append_dedup` |
+| Stale schema after manifest update | Source created with old definition ID | `update-connections.sh` detects this and recreates source |
+| Duplicate definitions in Airbyte | Old upload-manifests.sh created new definition each time | Fixed: `upload-manifests.sh` updates definition in-place |
+| Built-in vs custom connector name collision | Built-in "Zoom" found before custom "zoom" | Fixed: exact name match first |
+| Source config validation error | Source uses old definition with different spec fields | Re-run `update-connectors.sh` then `update-connections.sh` |
+
+### 4.16 Correct Deployment Order
+
+1. **Local first**: `source.sh validate` → `check` → `discover` → `generate-schema.sh` → `read`
+2. **Verify schema**: all cursor fields present, all streams have data
+3. **Upload**: `update-connectors.sh` — updates definition in-place
+4. **Connect**: `update-connections.sh <tenant>` — handles create/update/recreate
+5. **Sync**: `run-sync.sh <name> <tenant>` → `logs.sh -f latest`
+6. **Debug**: `logs.sh airbyte latest` for Airbyte-level errors
+
 ## 5. Traceability
 
 - **PRD**: [PRD.md](./PRD.md)

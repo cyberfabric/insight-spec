@@ -175,6 +175,7 @@ case "${command}" in
 
   check|discover)
     shift 2
+    [[ -n "${tenant:-}" ]] && shift  # remove tenant arg
     docker run --rm \
       -e "AIRBYTE_CONFIG=${AIRBYTE_CONFIG}" \
       -e "AIRBYTE_COMMAND=${COMMAND_NAME}" \
