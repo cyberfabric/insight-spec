@@ -234,6 +234,16 @@ path = "docs/components/connectors/ai/claude-api/specs/DESIGN.md"
 name = "Claude API Connector Design"
 
 [[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/connectors/ai/claude-api/specs/ADR/ADR-001-group-by-limit-inference-geo.md"
+name = "ADR-001: Drop inference_geo from group_by dimensions"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/connectors/ai/claude-api/specs/ADR/ADR-002-api-response-structure.md"
+name = "ADR-002: API response structure — nested records and field mapping"
+
+[[systems.artifacts]]
 kind = "PRD"
 path = "docs/components/connectors/ai/claude-team/specs/PRD.md"
 name = "Claude Team Plan Connector PRD"
