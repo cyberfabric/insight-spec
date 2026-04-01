@@ -1,7 +1,5 @@
 # PRD — Claude API Connector
 
-- [ ] `p3` - **ID**: `cpt-insightspec-prd-claude-api-connector`
-
 > Version 2.0 — March 2026
 > Based on: `docs/CONNECTORS_REFERENCE.md` Source 13 (Claude API), Anthropic Admin API documentation
 
@@ -10,7 +8,7 @@
 - [1. Overview](#1-overview)
   - [1.1 Purpose](#11-purpose)
   - [1.2 Background / Problem Statement](#12-background--problem-statement)
-  - [1.3 Goals](#13-goals)
+  - [1.3 Goals (Business Outcomes)](#13-goals-business-outcomes)
   - [1.4 Glossary](#14-glossary)
 - [2. Actors](#2-actors)
   - [2.1 Human Actors](#21-human-actors)
@@ -39,6 +37,8 @@
 - [11. Assumptions](#11-assumptions)
 - [12. Risks](#12-risks)
 - [13. Open Questions](#13-open-questions)
+  - [OQ-CAPI-1: Cost report granularity and description field semantics](#oq-capi-1-cost-report-granularity-and-description-field-semantics)
+  - [OQ-CAPI-2: Web search requests billing](#oq-capi-2-web-search-requests-billing)
 - [14. Non-Applicable Requirements](#14-non-applicable-requirements)
 
 <!-- /toc -->
@@ -63,7 +63,7 @@ Organizations using the Anthropic Claude API for internal tooling, automations, 
 
 Unlike Claude Team Plan (conversational, flat-seat billing), the Claude API is programmatic, pay-per-token, and not associated with individual user sessions at the API level. Cost attribution is by API key and workspace, not by person.
 
-### 1.3 Goals
+### 1.3 Goals (Business Outcomes)
 
 - Collect complete daily API token usage aggregates across all models, API keys, workspaces, and service tiers.
 - Collect daily cost reports with workspace-level and category-level breakdowns.
@@ -189,6 +189,8 @@ Unlike Claude Team Plan (conversational, flat-seat billing), the Claude API is p
 
 The connector **MUST** collect daily messages usage reports from `/v1/organizations/usage_report/messages`, capturing `date`, `model`, `api_key_id`, `workspace_id`, `service_tier`, `context_window`, `inference_geo`, `speed`, `uncached_input_tokens`, `cache_read_tokens`, `cache_creation_5m_tokens`, `cache_creation_1h_tokens`, `output_tokens`, and `web_search_requests` at one row per unique dimension combination per day.
 
+Note: `inference_geo` and `speed` are collected as nullable fields but are not available as `group_by` dimensions (API limit of 5 dimensions) — see [ADR-001](./ADR/ADR-001-group-by-limit-inference-geo.md).
+
 **Rationale**: Messages usage is the primary signal for API token consumption and cost attribution across all organizational dimensions.
 **Actors**: `cpt-insightspec-actor-claude-api-analytics-eng`
 
@@ -216,7 +218,7 @@ The connector **MUST** follow cursor-based pagination using the `next_page` toke
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-claude-api-cost-report`
 
-The connector **MUST** collect daily cost reports from `/v1/organizations/cost_report`, capturing `date`, `workspace_id`, `description`, and `amount_cents` at one row per `(date, workspace_id, description)`.
+The connector **MUST** collect daily cost reports from `/v1/organizations/cost_report`, capturing `date`, `workspace_id`, `description`, `amount`, `currency`, and additional dimension fields (`cost_type`, `model`, `service_tier`, `context_window`, `token_type`, `inference_geo`) at one row per `(date, workspace_id, description)`. Note: the API returns `amount` (string, USD) not `amount_cents` (integer) — see [ADR-002](./ADR/ADR-002-api-response-structure.md).
 
 **Rationale**: Cost reports provide financial attribution by workspace and cost category, complementing the token-level usage data.
 **Actors**: `cpt-insightspec-actor-claude-api-analytics-eng`, `cpt-insightspec-actor-claude-api-manager`
@@ -285,7 +287,7 @@ All records across all streams **MUST** include `tenant_id` (from config), `insi
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-claude-api-usage-unique-key`
 
-The connector **MUST** generate a composite `unique` key for each messages usage record from `(date, model, api_key_id, workspace_id, service_tier, context_window, inference_geo, speed)` to enable deduplication.
+The connector **MUST** generate a composite `unique` key for each messages usage record from `(date, model, api_key_id, workspace_id, service_tier, context_window)` to enable deduplication. Note: `inference_geo` and `speed` were removed from the key due to API constraints — see [ADR-001](./ADR/ADR-001-group-by-limit-inference-geo.md).
 
 **Rationale**: Usage records have no natural primary key from the API; a composite key is required for upsert semantics.
 **Actors**: `cpt-insightspec-actor-claude-api-analytics-eng`

@@ -77,13 +77,25 @@ Requirements that significantly influence architecture decisions.
 
 #### NFR Allocation
 
-| NFR ID | NFR Summary | Allocated To | Design Response | Verification Approach |
-|--------|-------------|--------------|-----------------|----------------------|
-| `cpt-insightspec-nfr-cn-rate-limit-compliance` | No API rate limit violations | Airbyte framework | Declarative pagination and backoff; framework-managed retry | Monitor API call counts per run |
-| `cpt-insightspec-nfr-cn-resource-quotas` | Bounded resource per run | Connector execution context | K8s resource limits on Argo workflow pods | Pod resource metrics |
-| `cpt-insightspec-nfr-cn-privacy-by-default` | Metadata-only by default | Schema layer | Explicit `InlineSchemaLoader` with declared fields; `additionalProperties: true` for forward compat only | Schema audit against connector spec |
-| `cpt-insightspec-nfr-cn-data-freshness` | Bronze data within 2x schedule | Orchestrator + connector | Cron schedule in `descriptor.yaml`; consecutive failure alerting | Freshness monitoring per connector |
-| `cpt-insightspec-nfr-cn-observability` | Health check + structured metrics | Connector execution context | Airbyte protocol status messages; Argo workflow status | Health endpoint + metric export |
+| NFR | Summary | Allocated To | Design Response | Verification |
+|---|---|---|---|---|
+| Idempotency | Re-running with the same cursor produces identical results | `ConnectorFramework` | Cursor read at start; written only on success; Bronze table uses `ReplacingMergeTree(_version)` | Run same cursor twice; verify row count unchanged |
+| Error isolation | One connector failure does not affect others | `OrchestratorAdapter` | Each connector runs in an isolated container; failures logged to `collection_runs`; no shared state | Kill one connector mid-run; verify others continue |
+| Rate limit compliance | Never exceed source system declared limits | `ConnectorFramework` | Exponential backoff with jitter on 429/503; connector declares `rate_limiting` params in manifest | Load test against mock source returning 429 |
+| Resource quotas | Bounded resource per run | Connector execution context | K8s resource limits on Argo workflow pods | Pod resource metrics |
+| Schema stability | Connector schema changes don't silently break downstream | `ConnectorManifest` | Semantic versioning on `connector.yaml`; schema changes require a version bump | Schema change without version bump fails validation |
+| Semantic propagation | New fields reach dashboard metric catalog without manual work | `DataCatalogSync` | Schema sync triggered on connector registration; semantic metadata auto-populates Semantic Dictionary | Register new connector; verify metric appears in catalog |
+| Privacy by default | Content fields (message text, email body) never collected | `ConnectorManifest` + SDK | Fields must be explicitly declared to be collected; no wildcard field capture | Audit connector manifest; confirm no undeclared content fields present in Bronze |
+| Data freshness | Bronze data within 2x schedule | Orchestrator + connector | Cron schedule in `descriptor.yaml`; consecutive failure alerting | Freshness monitoring per connector |
+| Observability | Health check + structured metrics | Connector execution context | Airbyte protocol status messages; Argo workflow status | Health endpoint + metric export |
+
+#### Architecture Decision Records
+
+| ADR | Decision | Status |
+|-----|----------|--------|
+| `cpt-insightspec-adr-connector-integration-protocol` | Use stdout JSON-per-line protocol for connector-to-system data delivery — language-agnostic, runner-mediated, backend-enforced integrity | proposed |
+| `cpt-insightspec-adr-connector-responsibility-scope` | Connectors are thin extractors (Airbyte-style) — extract raw data to stdout, no DB dependencies, dbt handles all transformations | proposed |
+| `cpt-insightspec-adr-connector-message-protocol` | Airbyte-compatible message protocol subset (RECORD, STATE, LOG, CATALOG, SPEC, CONNECTION_STATUS) with Insight extensions (METRIC, PROGRESS) | proposed |
 
 ### 1.3 Architecture Layers
 

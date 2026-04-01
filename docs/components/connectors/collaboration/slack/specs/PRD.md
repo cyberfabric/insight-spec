@@ -137,7 +137,7 @@ Slack has no internal email or document collaboration product. The `collab_email
 
 ### 3.1 Module-Specific Environment Constraints
 
-- Requires a Slack app installed to the target workspace with the following OAuth scopes: `channels:history`, `channels:read`, `groups:history`, `im:history`, `mpim:history`, `users:read`, `users:read.email`
+- Requires a Slack app installed to the target workspace with the following OAuth scopes: `channels:history`, `channels:read`, `groups:history`, `groups:read`, `im:history`, `im:read`, `mpim:history`, `mpim:read`, `users:read`, `users:read.email`
 - Enterprise Grid collection additionally requires admin-level token and `admin.analytics:read` scope
 - The connector operates as a batch collector; the recommended run frequency is daily
 - Slack API enforces tiered rate limits: Tier 2 (20 req/min) for user and channel listing, Tier 3 (50 req/min) for message history; the connector must handle HTTP 429 responses with `Retry-After` header
