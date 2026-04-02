@@ -1,8 +1,11 @@
 """GitHub repositories stream (REST, full refresh)."""
 
+import logging
 from typing import Any, Iterable, List, Mapping, Optional
 
 from source_github.streams.base import GitHubRestStream, _make_pk, check_rest_response
+
+logger = logging.getLogger("airbyte")
 
 
 class RepositoriesStream(GitHubRestStream):
@@ -11,9 +14,17 @@ class RepositoriesStream(GitHubRestStream):
     name = "repositories"
     use_cache = True  # Other streams use this as parent
 
-    def __init__(self, organizations: List[str], **kwargs):
+    def __init__(
+        self,
+        organizations: List[str],
+        skip_archived: bool = True,
+        skip_forks: bool = True,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._organizations = organizations
+        self._skip_archived = skip_archived
+        self._skip_forks = skip_forks
 
     def _path(self, stream_slice: Optional[Mapping[str, Any]] = None, **kwargs) -> str:
         org = (stream_slice or {}).get("organization", "")
@@ -45,11 +56,20 @@ class RepositoriesStream(GitHubRestStream):
         repos = response.json()
         if not isinstance(repos, list):
             repos = [repos]
+        skipped = 0
         for repo in repos:
             owner = repo.get("owner", {}).get("login", "")
             name = repo.get("name", "")
+            if self._skip_archived and repo.get("archived"):
+                skipped += 1
+                continue
+            if self._skip_forks and repo.get("fork"):
+                skipped += 1
+                continue
             repo["pk"] = _make_pk(self._tenant_id, self._source_instance_id, owner, name)
             yield self._add_envelope(repo)
+        if skipped:
+            logger.info(f"Repo filter: skipped {skipped} repos (archived/fork) in org {org}")
 
     def get_json_schema(self) -> Mapping[str, Any]:
         return {

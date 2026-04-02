@@ -67,6 +67,20 @@
         "description": "Proactive backoff when remaining API budget drops below this value.",
         "default": 200,
         "order": 7
+      },
+      "skip_archived": {
+        "type": "boolean",
+        "title": "Skip Archived Repos",
+        "description": "Skip archived repositories during collection.",
+        "default": true,
+        "order": 8
+      },
+      "skip_forks": {
+        "type": "boolean",
+        "title": "Skip Forked Repos",
+        "description": "Skip forked repositories during collection.",
+        "default": true,
+        "order": 9
       }
     }
   }

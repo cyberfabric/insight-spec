@@ -68,6 +68,8 @@ class SourceGitHub(AbstractSource):
         page_size_commits = config.get("page_size_graphql_commits", 100)
         page_size_prs = config.get("page_size_graphql_prs", 50)
         rate_limit_threshold = config.get("rate_limit_threshold", 200)
+        skip_archived = config.get("skip_archived", True)
+        skip_forks = config.get("skip_forks", True)
         rate_limiter = RateLimiter(threshold=rate_limit_threshold)
 
         shared_kwargs = {
@@ -78,7 +80,12 @@ class SourceGitHub(AbstractSource):
         }
 
         # Build stream dependency graph
-        repos = RepositoriesStream(organizations=organizations, **shared_kwargs)
+        repos = RepositoriesStream(
+            organizations=organizations,
+            skip_archived=skip_archived,
+            skip_forks=skip_forks,
+            **shared_kwargs,
+        )
         branches = BranchesStream(parent=repos, **shared_kwargs)
         commits = CommitsStream(
             parent=branches,
