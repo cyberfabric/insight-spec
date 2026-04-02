@@ -58,6 +58,53 @@ NEVER consider a raw Airbyte API sync (`/api/v1/connections/sync`) as e2e — it
 | dbt run | Bronze → Silver transformations | `run-sync.sh` (step 2) |
 | Full e2e | Both steps via Argo DAG | `./run-sync.sh <connector> <tenant>` |
 
+## Airbyte Architecture
+
+### Shared Destination
+
+ALWAYS use a single shared ClickHouse destination for all connectors. Do NOT create per-connector destinations.
+
+Each connection controls its own Bronze namespace via the `namespaceDefinition` and `namespaceFormat` fields:
+
+| Field | Value | Purpose |
+|-------|-------|---------|
+| `namespaceDefinition` | `"customformat"` | Use custom namespace |
+| `namespaceFormat` | `"bronze_{connector_name}"` | Per-connector ClickHouse database |
+
+The shared destination is configured with a default database (e.g., `default` or `bronze`). Each connection overrides the namespace to route data to the correct Bronze database.
+
+### Connector Credentials via K8s Secrets
+
+Connector credentials are managed via Kubernetes Secrets, not inline in tenant YAML.
+
+**Secret structure**:
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: insight-{connector}-{source-id}       # naming convention
+  labels:
+    app.kubernetes.io/part-of: insight         # discovery label
+  annotations:
+    insight.cyberfabric.com/connector: {name}  # matches descriptor.yaml name
+    insight.cyberfabric.com/source-id: {id}    # passed as insight_source_id
+type: Opaque
+stringData:
+  {field}: {value}                             # fields from connector.yaml connection_specification
+```
+
+**Discovery**: `apply-connections.sh` discovers Secrets by label `app.kubernetes.io/part-of=insight` and reads connector type from annotation `insight.cyberfabric.com/connector`.
+
+**Merge**: Secret data is merged with inline tenant YAML fields (inline takes precedence). `insight_tenant_id` comes from tenant YAML, `insight_source_id` from Secret annotation.
+
+**Multi-instance**: Multiple Secrets with the same `connector` annotation create separate Airbyte sources (e.g., two M365 tenants).
+
+**Backward compatibility**: If no matching Secret is found, inline credentials from tenant YAML are used as fallback.
+
+**Per-connector docs**: Each connector's `README.md` documents the required Secret fields. See `src/ingestion/connectors/*/README.md`.
+
+**Local development**: Create `.yaml` files in `src/ingestion/connections/secrets/` (gitignored) and run `./connections/secrets/apply.sh` to apply them. See connector READMEs for Secret YAML examples.
+
 ## Service Credentials
 
 ALWAYS obtain credentials from the cluster, not from hardcoded values.

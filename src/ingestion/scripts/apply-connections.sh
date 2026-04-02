@@ -82,6 +82,64 @@ def find_or_create(resource_type, list_path, list_key, create_path, create_data,
     print(f"  ERROR: could not create {resource_type}", file=sys.stderr)
     return None
 
+# --- K8s Secret discovery ---
+import subprocess, base64
+
+def discover_secrets():
+    """Discover Insight connector Secrets by label app.kubernetes.io/part-of=insight."""
+    try:
+        result = subprocess.run(
+            ["kubectl", "get", "secrets", "-l", "app.kubernetes.io/part-of=insight",
+             "--all-namespaces", "-o", "json"],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0:
+            print(f"  WARNING: kubectl get secrets failed: {result.stderr.strip()}", file=sys.stderr)
+            return []
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        print(f"  WARNING: kubectl not available or timed out: {e}", file=sys.stderr)
+        return []
+
+    secrets = []
+    items = json.loads(result.stdout).get("items", [])
+    for item in items:
+        annotations = item.get("metadata", {}).get("annotations", {})
+        connector = annotations.get("insight.cyberfabric.com/connector")
+        source_id = annotations.get("insight.cyberfabric.com/source-id")
+        if not connector:
+            continue
+        # Decode Secret data fields
+        data = {}
+        for k, v in item.get("data", {}).items():
+            try:
+                data[k] = base64.b64decode(v).decode()
+            except Exception:
+                data[k] = v
+        secrets.append({
+            "connector": connector,
+            "source_id": source_id or connector,
+            "data": data,
+            "name": item["metadata"]["name"],
+        })
+    return secrets
+
+def merge_credentials(secret_data, inline_config, tenant_id, source_id):
+    """Merge K8s Secret data with inline tenant config. Inline takes precedence."""
+    meta_fields = {"secretRef", "insight_source_id"}
+    config = dict(secret_data)
+    for k, v in (inline_config or {}).items():
+        if k not in meta_fields:
+            config[k] = v
+    # Inject tenant/source IDs based on connector field naming conventions
+    if "insight_tenant_id" not in config or config.get("insight_tenant_id") in ("", "${tenant_id}"):
+        config["insight_tenant_id"] = tenant_id
+    if "tenant_id" not in config or config.get("tenant_id") in ("", "${tenant_id}"):
+        config["tenant_id"] = tenant_id
+    config["insight_source_id"] = source_id
+    if "source_instance_id" in secret_data or "source_instance_id" in (inline_config or {}):
+        config["source_instance_id"] = source_id
+    return config
+
 # --- Lookup ClickHouse definition ID (shared across connectors) ---
 ch_def_id = state.get("clickhouse_definition_id")
 if not ch_def_id:
@@ -96,12 +154,76 @@ if not ch_def_id:
     sys.exit(1)
 state["clickhouse_definition_id"] = ch_def_id
 
-# --- Per-connector sources + connections ---
+# --- Shared ClickHouse destination (one for all connectors) ---
+shared_dest_name = "clickhouse"
+shared_dest_id = state.get("shared_destination_id")
+if not shared_dest_id:
+    existing = api("POST", "/api/v1/destinations/list", {"workspaceId": workspace_id})
+    if existing:
+        for d in existing.get("destinations", []):
+            if d["name"] == shared_dest_name:
+                shared_dest_id = d["destinationId"]
+                print(f"  Shared destination found: {shared_dest_id}")
+                break
+if not shared_dest_id:
+    result = api("POST", "/api/v1/destinations/create", {
+        "workspaceId": workspace_id,
+        "name": shared_dest_name,
+        "destinationDefinitionId": ch_def_id,
+        "connectionConfiguration": {
+            "host": dest_config.get("host", "clickhouse.data.svc.cluster.local"),
+            "port": str(dest_config.get("port", 8123)),
+            "database": "default",
+            "username": dest_config.get("username", "default"),
+            "password": dest_config.get("password", "clickhouse"),
+            "protocol": "http",
+            "enable_json": True,
+        }
+    })
+    if result and "destinationId" in result:
+        shared_dest_id = result["destinationId"]
+        print(f"  Shared destination created: {shared_dest_id}")
+    else:
+        print(f"  ERROR: could not create shared ClickHouse destination: {result}", file=sys.stderr)
+        sys.exit(1)
+state["shared_destination_id"] = shared_dest_id
+
+# --- Discover K8s Secrets and build connector instances ---
 state.setdefault("connectors", {})
 conn_state_all = state["connectors"]
 
-for connector_name, creds in tenant.get("connectors", {}).items():
-    print(f"  Connector: {connector_name}")
+all_secrets = discover_secrets()
+if all_secrets:
+    print(f"  Discovered {len(all_secrets)} K8s Secret(s): {', '.join(s['name'] for s in all_secrets)}")
+else:
+    print(f"  No K8s Secrets found (label app.kubernetes.io/part-of=insight)")
+
+# Group secrets by connector name
+secrets_by_connector = {}
+for s in all_secrets:
+    secrets_by_connector.setdefault(s["connector"], []).append(s)
+
+# Build list of (connector_name, source_id, config) to process
+connector_instances = []
+for connector_name, inline_creds in tenant.get("connectors", {}).items():
+    matching_secrets = secrets_by_connector.get(connector_name, [])
+    if matching_secrets:
+        for secret in matching_secrets:
+            sid = secret["source_id"]
+            config = merge_credentials(secret["data"], inline_creds, tenant_id, sid)
+            connector_instances.append((connector_name, sid, config))
+            print(f"  Connector: {connector_name} (source: {sid}, from Secret '{secret['name']}')")
+    elif inline_creds:
+        # Backward compatibility: use inline credentials
+        sid = inline_creds.get("insight_source_id", connector_name)
+        config = merge_credentials({}, inline_creds, tenant_id, sid)
+        connector_instances.append((connector_name, sid, config))
+        print(f"  Connector: {connector_name} (source: {sid}, inline credentials)")
+    else:
+        print(f"  Connector: {connector_name} — ERROR: no K8s Secret and no inline credentials, skipping", file=sys.stderr)
+
+# --- Per-connector sources + connections ---
+for connector_name, source_id_label, config in connector_instances:
 
     # Find descriptor
     descriptor_path = None
@@ -119,46 +241,14 @@ for connector_name, creds in tenant.get("connectors", {}).items():
     with open(descriptor_path) as f:
         descriptor = yaml.safe_load(f)
 
-    conn_state = state["connectors"].setdefault(connector_name, {})
+    # State key includes source_id for multi-instance support
+    state_key = f"{connector_name}-{source_id_label}" if source_id_label != connector_name else connector_name
+    conn_state = state["connectors"].setdefault(state_key, {})
 
-    # Create ClickHouse database for this connector
+    # Create ClickHouse database for this connector's namespace
     db_name = descriptor.get("connection", {}).get("namespace", f"bronze_{connector_name}")
     print(f"    Creating database: {db_name}")
     os.system(f'kubectl exec -n data deploy/clickhouse -- clickhouse-client --password clickhouse --query "CREATE DATABASE IF NOT EXISTS {db_name}" 2>/dev/null')
-
-    # Create/find per-connector destination (database = bronze_{name})
-    dest_name = f"clickhouse-{connector_name}"
-    dest_id = conn_state.get("destination_id")
-    if not dest_id:
-        existing = api("POST", "/api/v1/destinations/list", {"workspaceId": workspace_id})
-        if existing:
-            for d in existing.get("destinations", []):
-                if d["name"] == dest_name:
-                    dest_id = d["destinationId"]
-                    print(f"    Destination found: {dest_id}")
-                    break
-    if not dest_id:
-        result = api("POST", "/api/v1/destinations/create", {
-            "workspaceId": workspace_id,
-            "name": dest_name,
-            "destinationDefinitionId": ch_def_id,
-            "connectionConfiguration": {
-                "host": dest_config.get("host", "clickhouse.data.svc.cluster.local"),
-                "port": str(dest_config.get("port", 8123)),
-                "database": db_name,
-                "username": dest_config.get("username", "default"),
-                "password": dest_config.get("password", "clickhouse"),
-                "protocol": "http",
-                "enable_json": True,
-            }
-        })
-        if result and "destinationId" in result:
-            dest_id = result["destinationId"]
-            print(f"    Destination created: {dest_id}")
-        else:
-            print(f"    ERROR: could not create destination for {connector_name}: {result}", file=sys.stderr)
-            continue
-    conn_state["destination_id"] = dest_id
 
     # Find source definition ID — from state first, then API fallback
     old_def_id = conn_state.get("definition_id")
@@ -185,7 +275,7 @@ for connector_name, creds in tenant.get("connectors", {}).items():
     conn_state["definition_id"] = def_id
 
     # Create/find source — recreate if definition changed
-    source_name = f"{connector_name}-{tenant_id}"
+    source_name = f"{connector_name}-{source_id_label}-{tenant_id}"
     source_id = conn_state.get("source_id")
     source_recreated = False
 
@@ -204,10 +294,6 @@ for connector_name, creds in tenant.get("connectors", {}).items():
         source_recreated = True
 
     if not source_id:
-        config = dict(creds)
-        if "insight_tenant_id" not in config or config["insight_tenant_id"] == "${tenant_id}":
-            config["insight_tenant_id"] = tenant_id
-
         source_id = find_or_create(
             "source",
             "/api/v1/sources/list", "sources",
@@ -227,7 +313,7 @@ for connector_name, creds in tenant.get("connectors", {}).items():
 
     # Create/find connection
     connection_config = descriptor.get("connection", {})
-    connection_name = f"{connector_name}-to-clickhouse-{tenant_id}"
+    connection_name = f"{connector_name}-{source_id_label}-to-clickhouse-{tenant_id}"
     connection_id = conn_state.get("connection_id")
 
     if not connection_id:
@@ -282,9 +368,10 @@ for connector_name, creds in tenant.get("connectors", {}).items():
             "/api/v1/connections/create",
             {
                 "sourceId": source_id,
-                "destinationId": dest_id,
+                "destinationId": shared_dest_id,
                 "name": connection_name,
-                "namespaceDefinition": "destination",
+                "namespaceDefinition": "customformat",
+                "namespaceFormat": db_name,
                 "status": "active",
                 "syncCatalog": sync_catalog,
             },
@@ -297,7 +384,7 @@ for connector_name, creds in tenant.get("connectors", {}).items():
 # Save tenant state into .airbyte-state.yaml
 state["workspace_id"] = workspace_id
 for cn, cs in conn_state_all.items():
-    for key in ("destination_id", "source_id", "connection_id"):
+    for key in ("source_id", "connection_id"):
         if key in cs:
             section = key.replace("_id", "s")  # destination_id → destinations
             state.setdefault("tenants", {}).setdefault(tenant_id, {}).setdefault(section, {})[cn] = cs[key]
