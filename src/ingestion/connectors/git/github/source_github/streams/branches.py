@@ -14,6 +14,7 @@ class BranchesStream(GitHubRestStream):
     def __init__(self, parent: RepositoriesStream, **kwargs):
         super().__init__(**kwargs)
         self._parent = parent
+        self._cached_records: Optional[list] = None
 
     def _path(self, stream_slice: Optional[Mapping[str, Any]] = None, **kwargs) -> str:
         s = stream_slice or {}
@@ -25,9 +26,15 @@ class BranchesStream(GitHubRestStream):
 
     def read_records(self, sync_mode=None, stream_slice=None, **kwargs) -> Iterable[Mapping[str, Any]]:
         if stream_slice is None:
-            # Called by child stream without a slice — iterate all repos
+            if self._cached_records is not None:
+                yield from self._cached_records
+                return
+            temp = []
             for repo_slice in self.stream_slices():
-                yield from super().read_records(sync_mode=sync_mode, stream_slice=repo_slice, **kwargs)
+                for record in super().read_records(sync_mode=sync_mode, stream_slice=repo_slice, **kwargs):
+                    temp.append(record)
+            self._cached_records = temp
+            yield from self._cached_records
         else:
             yield from super().read_records(sync_mode=sync_mode, stream_slice=stream_slice, **kwargs)
 

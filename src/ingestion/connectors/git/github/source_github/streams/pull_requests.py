@@ -31,17 +31,29 @@ class PullRequestsStream(GitHubGraphQLStream):
         self._parent = parent
         self._page_size = page_size
         self._partitions_with_errors: set = set()
+        self._cached_records: Optional[list] = None
 
     def _query(self) -> str:
         return BULK_PR_QUERY
 
     def read_records(self, sync_mode=None, stream_slice=None, stream_state=None, **kwargs):
         if stream_slice is None:
-            # Called by child stream without a slice — iterate all repo slices
+            # Called by child stream — serve from cache if available
+            if self._cached_records is not None:
+                yield from self._cached_records
+                return
+
+            # First child call: fetch, cache atomically, then yield
+            temp = []
             for repo_slice in self.stream_slices(stream_state=stream_state):
-                yield from super().read_records(
+                for record in super().read_records(
                     sync_mode=sync_mode, stream_slice=repo_slice, stream_state=stream_state, **kwargs
-                )
+                ):
+                    temp.append(record)
+            # Only cache after full successful completion
+            self._cached_records = temp
+            logger.info(f"PR cache: {len(self._cached_records)} records cached for child streams")
+            yield from self._cached_records
         else:
             yield from super().read_records(
                 sync_mode=sync_mode, stream_slice=stream_slice, stream_state=stream_state, **kwargs

@@ -25,6 +25,7 @@ class RepositoriesStream(GitHubRestStream):
         self._organizations = organizations
         self._skip_archived = skip_archived
         self._skip_forks = skip_forks
+        self._cached_records: Optional[list] = None
 
     def _path(self, stream_slice: Optional[Mapping[str, Any]] = None, **kwargs) -> str:
         org = (stream_slice or {}).get("organization", "")
@@ -34,9 +35,15 @@ class RepositoriesStream(GitHubRestStream):
 
     def read_records(self, sync_mode=None, stream_slice=None, **kwargs) -> Iterable[Mapping[str, Any]]:
         if stream_slice is None:
-            # Called by child stream without a slice — iterate all orgs
+            if self._cached_records is not None:
+                yield from self._cached_records
+                return
+            temp = []
             for org_slice in self.stream_slices():
-                yield from super().read_records(sync_mode=sync_mode, stream_slice=org_slice, **kwargs)
+                for record in super().read_records(sync_mode=sync_mode, stream_slice=org_slice, **kwargs):
+                    temp.append(record)
+            self._cached_records = temp
+            yield from self._cached_records
         else:
             yield from super().read_records(sync_mode=sync_mode, stream_slice=stream_slice, **kwargs)
 

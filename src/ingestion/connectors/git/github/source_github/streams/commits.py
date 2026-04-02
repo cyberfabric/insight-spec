@@ -48,6 +48,7 @@ class CommitsStream(GitHubGraphQLStream):
 
     def read_records(self, sync_mode=None, stream_slice=None, stream_state=None, **kwargs):
         if stream_slice is None:
+            # Called by child stream (commit_files) — no cache, re-fetches
             for branch_slice in self.stream_slices(stream_state=stream_state):
                 yield from super().read_records(
                     sync_mode=sync_mode, stream_slice=branch_slice, stream_state=stream_state, **kwargs
