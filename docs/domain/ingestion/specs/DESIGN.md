@@ -82,6 +82,7 @@ This layer replaces the previously designed custom Orchestrator and custom Conne
 |-----|----------|
 | [ADR-0001](ADR/0001-kestra-over-airflow.md) `cpt-insightspec-adr-ing-kestra-over-airflow` | Use Kestra over Airflow — YAML-first, no Python dependency (superseded) |
 | [ADR-0002](ADR/0002-argo-over-kestra.md) `cpt-insightspec-adr-argo-over-kestra` | Use Argo Workflows over Kestra — K8s-native, no external DB dependency |
+| [ADR-0003](ADR/0003-k8s-secrets-credentials.md) `cpt-insightspec-adr-k8s-secrets-credentials` | Use K8s Secrets as primary credential source — vendor-neutral, dev/prod parity |
 
 ### 1.3 Architecture Layers
 

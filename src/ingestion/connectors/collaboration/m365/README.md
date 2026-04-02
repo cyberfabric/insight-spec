@@ -1,0 +1,72 @@
+# M365 Connector
+
+Microsoft 365 activity reports (email, Teams, OneDrive, SharePoint).
+
+## Prerequisites
+
+1. Create an App Registration in Azure AD
+2. Grant application permissions: `Reports.Read.All`, `User.Read.All`
+3. Create a client secret
+
+## K8s Secret
+
+Create a Kubernetes Secret with the connector credentials:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: insight-m365-main                          # convention: insight-{connector}-{source-id}
+  labels:
+    app.kubernetes.io/part-of: insight
+  annotations:
+    insight.constructor.io/connector: m365          # must match descriptor.yaml name
+    insight.constructor.io/source-id: main          # passed as insight_source_id
+type: Opaque
+stringData:
+  azure_tenant_id: ""       # Azure AD tenant ID
+  azure_client_id: ""       # App registration client ID
+  azure_client_secret: ""   # App registration client secret
+```
+
+### Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `azure_tenant_id` | Yes | Azure AD tenant ID |
+| `azure_client_id` | Yes | App registration client ID |
+| `azure_client_secret` | Yes | App registration client secret (sensitive) |
+
+### Automatically injected
+
+These fields are set by `apply-connections.sh` and should NOT be in the Secret:
+
+| Field | Source |
+|-------|--------|
+| `insight_tenant_id` | `tenant_id` from tenant YAML |
+| `insight_source_id` | `insight.constructor.io/source-id` annotation |
+
+## Tenant Config
+
+Non-credential configuration in `connections/{tenant}.yaml`:
+
+```yaml
+connectors:
+  m365: {}
+```
+
+No additional non-credential fields required for this connector.
+
+## Multi-Instance
+
+To sync multiple Azure AD tenants, create separate Secrets with different `source-id` annotations:
+
+```yaml
+# Secret 1: insight-m365-main
+annotations:
+  insight.constructor.io/source-id: main
+
+# Secret 2: insight-m365-emea
+annotations:
+  insight.constructor.io/source-id: emea
+```
