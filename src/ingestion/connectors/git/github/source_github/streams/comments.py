@@ -53,8 +53,8 @@ class CommentsStream(GitHubRestStream):
         state = stream_state or self._state
         seen_repos = set()
         for pr in self._parent.read_records(sync_mode=None):
-            owner = pr.get("_owner", "")
-            repo = pr.get("_repo", "")
+            owner = pr.get("repo_owner", "")
+            repo = pr.get("repo_name", "")
             if not (owner and repo):
                 continue
             repo_key = f"{owner}/{repo}"
@@ -199,8 +199,8 @@ class CommentsStream(GitHubRestStream):
                     "author_database_id": user.get("id"),
                     "author_email": None,
                     "author_association": comment.get("author_association"),
-                    "_owner": owner,
-                    "_repo": repo,
+                    "repo_owner": owner,
+                    "repo_name": repo,
                 }
                 if is_inline:
                     record["diff_hunk"] = comment.get("diff_hunk")
@@ -283,7 +283,7 @@ class CommentsStream(GitHubRestStream):
                 "side": {"type": ["null", "string"]},
                 "in_reply_to_id": {"type": ["null", "integer"]},
                 "pr_updated_at": {"type": ["null", "string"]},
-                "_owner": {"type": "string"},
-                "_repo": {"type": "string"},
+                "repo_owner": {"type": "string"},
+                "repo_name": {"type": "string"},
             },
         }

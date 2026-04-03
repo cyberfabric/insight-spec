@@ -127,8 +127,8 @@ class CommitsStream(GitHubGraphQLStream):
         # Collect all branches per repo
         repo_branches: dict[tuple, list] = {}
         for record in self._parent.read_records(sync_mode=None):
-            owner = record.get("_owner", "")
-            repo = record.get("_repo", "")
+            owner = record.get("repo_owner", "")
+            repo = record.get("repo_name", "")
             if owner and repo:
                 repo_branches.setdefault((owner, repo), []).append(record)
 
@@ -141,7 +141,7 @@ class CommitsStream(GitHubGraphQLStream):
             # --- Optimization 1: Repo freshness gate ---
             repo_pushed_at = ""
             for record in branches:
-                pa = record.get("_pushed_at", "")
+                pa = record.get("pushed_at", "")
                 if pa:
                     repo_pushed_at = pa
                     break
@@ -156,7 +156,7 @@ class CommitsStream(GitHubGraphQLStream):
             # --- Find default branch ---
             default_branch = ""
             for record in branches:
-                db = record.get("_default_branch", "")
+                db = record.get("default_branch_name", "")
                 if db:
                     default_branch = db
                     break
@@ -277,14 +277,14 @@ class CommitsStream(GitHubGraphQLStream):
         current_stream_state: MutableMapping[str, Any],
         latest_record: Mapping[str, Any],
     ) -> MutableMapping[str, Any]:
-        partition_key = f"{latest_record.get('_owner', '')}/{latest_record.get('_repo', '')}/{latest_record.get('_branch', '')}"
+        partition_key = f"{latest_record.get('repo_owner', '')}/{latest_record.get('repo_name', '')}/{latest_record.get('branch_name', '')}"
         if partition_key in self._partitions_with_errors:
             return current_stream_state
         record_cursor = latest_record.get(self.cursor_field, "")
         current_cursor = current_stream_state.get(partition_key, {}).get(self.cursor_field, "")
         if record_cursor > current_cursor:
             # Store both timestamp cursor AND head SHA
-            head_sha = latest_record.get("_head_sha", "")
+            head_sha = latest_record.get("head_sha", "")
             cursor_entry = {self.cursor_field: record_cursor}
             if head_sha:
                 cursor_entry["head_sha"] = head_sha
@@ -296,10 +296,10 @@ class CommitsStream(GitHubGraphQLStream):
                     current_stream_state[sibling_key] = dict(cursor_entry)
 
         # Store repo pushed_at for freshness gate
-        repo_pushed_at = latest_record.get("_repo_pushed_at", "")
+        repo_pushed_at = latest_record.get("repo_pushed_at", "")
         if repo_pushed_at:
-            owner = latest_record.get("_owner", "")
-            repo = latest_record.get("_repo", "")
+            owner = latest_record.get("repo_owner", "")
+            repo = latest_record.get("repo_name", "")
             repo_state_key = f"_repo:{owner}/{repo}"
             current_stream_state[repo_state_key] = {"pushed_at": repo_pushed_at}
 
@@ -360,11 +360,11 @@ class CommitsStream(GitHubGraphQLStream):
                 "committer_login": committer_user.get("login"),
                 "committer_database_id": committer_user.get("databaseId"),
                 "parent_hashes": [p["oid"] for p in (node.get("parents", {}).get("nodes") or [])],
-                "_owner": owner,
-                "_repo": repo,
-                "_branch": branch,
-                "_head_sha": head_sha,
-                "_repo_pushed_at": repo_pushed_at,
+                "repo_owner": owner,
+                "repo_name": repo,
+                "branch_name": branch,
+                "head_sha": head_sha,
+                "repo_pushed_at": repo_pushed_at,
             }
             yield self._add_envelope(record)
 
@@ -395,8 +395,8 @@ class CommitsStream(GitHubGraphQLStream):
                 "committer_login": {"type": ["null", "string"]},
                 "committer_database_id": {"type": ["null", "integer"]},
                 "parent_hashes": {"type": ["null", "array"], "items": {"type": "string"}},
-                "_owner": {"type": "string"},
-                "_repo": {"type": "string"},
-                "_branch": {"type": "string"},
+                "repo_owner": {"type": "string"},
+                "repo_name": {"type": "string"},
+                "branch_name": {"type": "string"},
             },
         }

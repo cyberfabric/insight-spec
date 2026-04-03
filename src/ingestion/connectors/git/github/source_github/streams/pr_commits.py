@@ -50,8 +50,8 @@ class PRCommitsStream(GitHubRestStream):
         total = 0
         skipped = 0
         for pr in self._parent.read_records(sync_mode=None):
-            owner = pr.get("_owner", "")
-            repo = pr.get("_repo", "")
+            owner = pr.get("repo_owner", "")
+            repo = pr.get("repo_name", "")
             pr_number = pr.get("number")
             pr_database_id = pr.get("database_id")
             pr_updated_at = pr.get("updated_at", "")
@@ -177,9 +177,9 @@ class PRCommitsStream(GitHubRestStream):
                     "commit_committed_date": commit.get("committedDate"),
                     "commit_order": len(records),
                     "pr_updated_at": pr_updated_at,
-                    "_partition_key": stream_slice.get("partition_key"),
-                    "_owner": owner,
-                    "_repo": repo,
+                    "partition_key": stream_slice.get("partition_key"),
+                    "repo_owner": owner,
+                    "repo_name": repo,
                 })
 
             if page_info.get("hasNextPage"):
@@ -220,8 +220,8 @@ class PRCommitsStream(GitHubRestStream):
                 "commit_committed_date": {"type": ["null", "string"]},
                 "commit_order": {"type": ["null", "integer"]},
                 "pr_updated_at": {"type": ["null", "string"]},
-                "_partition_key": {"type": ["null", "string"]},
-                "_owner": {"type": "string"},
-                "_repo": {"type": "string"},
+                "partition_key": {"type": ["null", "string"]},
+                "repo_owner": {"type": "string"},
+                "repo_name": {"type": "string"},
             },
         }

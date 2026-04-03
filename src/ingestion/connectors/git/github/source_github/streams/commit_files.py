@@ -51,8 +51,8 @@ class CommitFilesStream(GitHubRestStream):
         total = 0
         skipped = 0
         for record in self._parent.read_records(sync_mode=None):
-            owner = record.get("_owner", "")
-            repo = record.get("_repo", "")
+            owner = record.get("repo_owner", "")
+            repo = record.get("repo_name", "")
             sha = record.get("oid", "")
             if not sha:
                 continue
@@ -147,9 +147,9 @@ class CommitFilesStream(GitHubRestStream):
                     "contents_url": f.get("contents_url"),
                     "sha": f.get("sha"),  # blob SHA
                     "committed_date": stream_slice.get("committed_date"),
-                    "_partition_key": stream_slice.get("partition_key"),
-                    "_owner": owner,
-                    "_repo": repo,
+                    "partition_key": stream_slice.get("partition_key"),
+                    "repo_owner": owner,
+                    "repo_name": repo,
                 })
 
             url = resp.links.get("next", {}).get("url")
@@ -186,7 +186,7 @@ class CommitFilesStream(GitHubRestStream):
                 "contents_url": {"type": ["null", "string"]},
                 "sha": {"type": ["null", "string"]},
                 "committed_date": {"type": ["null", "string"]},
-                "_owner": {"type": "string"},
-                "_repo": {"type": "string"},
+                "repo_owner": {"type": "string"},
+                "repo_name": {"type": "string"},
             },
         }

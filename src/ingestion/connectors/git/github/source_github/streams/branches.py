@@ -65,10 +65,10 @@ class BranchesStream(GitHubRestStream):
                 self._tenant_id, self._source_instance_id,
                 owner, repo, branch_name,
             )
-            branch["_owner"] = owner
-            branch["_repo"] = repo
-            branch["_default_branch"] = stream_slice.get("default_branch", "")
-            branch["_pushed_at"] = stream_slice.get("pushed_at", "")
+            branch["repo_owner"] = owner
+            branch["repo_name"] = repo
+            branch["default_branch_name"] = stream_slice.get("default_branch", "")
+            branch["pushed_at"] = stream_slice.get("pushed_at", "")
             yield self._add_envelope(branch)
 
     def get_json_schema(self) -> Mapping[str, Any]:
@@ -85,7 +85,7 @@ class BranchesStream(GitHubRestStream):
                 "name": {"type": ["null", "string"]},
                 "commit": {"type": ["null", "object"]},
                 "protected": {"type": ["null", "boolean"]},
-                "_owner": {"type": "string"},
-                "_repo": {"type": "string"},
+                "repo_owner": {"type": "string"},
+                "repo_name": {"type": "string"},
             },
         }

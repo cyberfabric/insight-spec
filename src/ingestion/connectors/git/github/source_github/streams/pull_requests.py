@@ -136,7 +136,7 @@ class PullRequestsStream(GitHubGraphQLStream):
         current_stream_state: MutableMapping[str, Any],
         latest_record: Mapping[str, Any],
     ) -> MutableMapping[str, Any]:
-        partition_key = f"{latest_record.get('_owner', '')}/{latest_record.get('_repo', '')}"
+        partition_key = f"{latest_record.get('repo_owner', '')}/{latest_record.get('repo_name', '')}"
         if partition_key in self._partitions_with_errors:
             return current_stream_state
         record_cursor = latest_record.get(self.cursor_field, "")
@@ -145,10 +145,10 @@ class PullRequestsStream(GitHubGraphQLStream):
             current_stream_state[partition_key] = {self.cursor_field: record_cursor}
 
         # Store repo pushed_at for freshness gate
-        pushed_at = latest_record.get("_repo_pushed_at", "")
+        pushed_at = latest_record.get("repo_pushed_at", "")
         if pushed_at:
-            owner = latest_record.get("_owner", "")
-            repo = latest_record.get("_repo", "")
+            owner = latest_record.get("repo_owner", "")
+            repo = latest_record.get("repo_name", "")
             repo_state_key = f"_repo:{owner}/{repo}"
             current_stream_state[repo_state_key] = {"pushed_at": pushed_at}
 
@@ -262,9 +262,9 @@ class PullRequestsStream(GitHubGraphQLStream):
                 "review_count": (pr_node.get("reviews") or {}).get("totalCount"),
                 "requested_reviewers": requested_reviewers,
                 "requested_teams": requested_teams,
-                "_owner": owner,
-                "_repo": repo,
-                "_repo_pushed_at": (stream_slice or {}).get("pushed_at", ""),
+                "repo_owner": owner,
+                "repo_name": repo,
+                "repo_pushed_at": (stream_slice or {}).get("pushed_at", ""),
             }
             yield self._add_envelope(record)
 
@@ -308,7 +308,7 @@ class PullRequestsStream(GitHubGraphQLStream):
                 "review_count": {"type": ["null", "integer"]},
                 "requested_reviewers": {"type": ["null", "array"], "items": {"type": "string"}},
                 "requested_teams": {"type": ["null", "array"], "items": {"type": "string"}},
-                "_owner": {"type": "string"},
-                "_repo": {"type": "string"},
+                "repo_owner": {"type": "string"},
+                "repo_name": {"type": "string"},
             },
         }

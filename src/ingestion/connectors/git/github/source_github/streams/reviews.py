@@ -50,8 +50,8 @@ class ReviewsStream(GitHubRestStream):
         skipped = 0
         skipped_no_reviews = 0
         for pr in self._parent.read_records(sync_mode=None):
-            owner = pr.get("_owner", "")
-            repo = pr.get("_repo", "")
+            owner = pr.get("repo_owner", "")
+            repo = pr.get("repo_name", "")
             pr_number = pr.get("number")
             pr_database_id = pr.get("database_id")
             pr_updated_at = pr.get("updated_at", "")
@@ -171,9 +171,9 @@ class ReviewsStream(GitHubRestStream):
                     "author_association": review.get("author_association"),
                     "commit_id": review.get("commit_id"),
                     "pr_updated_at": stream_slice.get("pr_updated_at"),
-                    "_partition_key": stream_slice.get("partition_key"),
-                    "_owner": owner,
-                    "_repo": repo,
+                    "partition_key": stream_slice.get("partition_key"),
+                    "repo_owner": owner,
+                    "repo_name": repo,
                 })
 
             url = resp.links.get("next", {}).get("url")
@@ -209,7 +209,7 @@ class ReviewsStream(GitHubRestStream):
                 "author_association": {"type": ["null", "string"]},
                 "commit_id": {"type": ["null", "string"]},
                 "pr_updated_at": {"type": ["null", "string"]},
-                "_owner": {"type": "string"},
-                "_repo": {"type": "string"},
+                "repo_owner": {"type": "string"},
+                "repo_name": {"type": "string"},
             },
         }
