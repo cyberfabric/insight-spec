@@ -62,6 +62,8 @@ A growing need has also emerged for per-file third-party code detection: identif
 
 ### 1.3 Goals (Business Outcomes)
 
+**Baseline**: No GitHub data is currently collected (greenfield). All targets apply from v1.0 GA.
+
 - Collect all repositories, branches, commits, pull requests, reviewer actions, and comments from GitHub organizations. **Target**: complete initial collection of an organization with up to 500 repositories within 8 hours under standard GitHub rate limit conditions.
 - Store collected data in the unified `git_*` Silver tables using `data_source = "insight_github"` as the discriminator, enabling cross-platform queries alongside Bitbucket and GitLab data.
 - Support incremental collection so that repeated runs only fetch data changed since the last successful run. **Target**: incremental runs for repositories with fewer than 10,000 commits per branch complete within 15 minutes under normal rate limit conditions.
@@ -231,6 +233,8 @@ The connector SHOULD collect GitHub-specific repository metrics (stars count, fo
 
 The connector MUST enumerate all branches per repository and track branch state to support incremental commit collection.
 
+**Rationale**: Branch enumeration is a prerequisite for per-branch incremental commit collection and enables analytics on branch activity patterns.
+
 **Actors**: `cpt-insightspec-actor-gh-api`
 
 ### 5.2 Commit Collection
@@ -296,6 +300,8 @@ The connector MUST extract ticket references (e.g., Jira issue keys, GitHub issu
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-gh-pr-commits`
 
 The connector MUST collect the set of commits associated with each pull request.
+
+**Rationale**: PR-to-commit linkage is required for cycle time analysis, review scope assessment, and tracing individual commits to the PR workflow that introduced them.
 
 **Actors**: `cpt-insightspec-actor-gh-analytics-eng`
 
@@ -390,6 +396,8 @@ The connector MUST maintain per-branch commit cursors (last collected commit has
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-gh-early-exit`
 
 The connector MUST stop fetching commits for a branch when it encounters a commit already present in the collection state. The connector MUST stop fetching pull requests when it encounters a PR whose update timestamp is before the last collection cursor.
+
+**Rationale**: Early exit avoids redundant API calls on incremental runs, significantly reducing rate limit consumption and run time for active repositories.
 
 **Actors**: `cpt-insightspec-actor-gh-platform-engineer`
 
@@ -641,6 +649,7 @@ Repeated collection of the same data MUST NOT create duplicate rows. The connect
 - The unified `git_*` Silver tables (including `git_commits_files_ext`) are pre-provisioned per the schema in `docs/components/connectors/git/README.md`.
 - GitHub's no-reply email addresses (`user@users.noreply.github.com`) are resolved by the Identity Manager via the username fallback.
 - Enrichment pipelines operate independently of the core connector and are responsible for their own scheduling and error handling.
+- Data retention, archival, and lifecycle management (purging) for collected data are owned by the platform-level data governance policy and are out of scope for this connector.
 
 ---
 
@@ -660,10 +669,14 @@ Repeated collection of the same data MUST NOT create duplicate rows. The connect
 
 ### OQ-GH-1: Email privacy handling
 
-**Resolved**: The connector stores raw `author_email`, `author_login`, and `author_database_id` on commit records. Identity resolution is delegated to Silver Step 2 via the Identity Manager, using email as primary key and GitHub login as fallback. No-reply addresses are handled by the fallback path. For reviews and comments (REST endpoints), `author_email` is not available — identity resolution uses `author_login` + `author_database_id`.
+**Status**: Resolved (Owner: Platform Engineering, Resolved: 2026-03)
+
+The connector stores raw `author_email`, `author_login`, and `author_database_id` on commit records. Identity resolution is delegated to Silver Step 2 via the Identity Manager, using email as primary key and GitHub login as fallback. No-reply addresses are handled by the fallback path. For reviews and comments (REST endpoints), `author_email` is not available — identity resolution uses `author_login` + `author_database_id`.
 
 ---
 
 ### OQ-GH-2: Review state mapping
 
-**Resolved**: All four formal review states (`APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`, `DISMISSED`) are stored in Bronze. `PENDING` reviews (draft reviews not yet formally submitted) are skipped — they are not collected. Analytics consumers filter by state as needed.
+**Status**: Resolved (Owner: Platform Engineering, Resolved: 2026-03)
+
+All four formal review states (`APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`, `DISMISSED`) are stored in Bronze. `PENDING` reviews (draft reviews not yet formally submitted) are skipped — they are not collected. Analytics consumers filter by state as needed.

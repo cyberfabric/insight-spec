@@ -91,25 +91,26 @@ Fault tolerance is achieved through Airbyte CDK retry semantics, slice-level and
 |  +-- streams() -> 8 stream instances                                   |
 +----+----------+----------+----------+----------+----------+-----------+
      |          |          |          |          |          |
-+----v----+ +---v----+ +--v-------+ +v--------+ +v-------+ +v---------+
-|repos    | |branches| |commits   | |commit   | |pull    | |pr_reviews|
-|(REST    | |(REST   | |(GraphQL  | |_files   | |requests| |(REST     |
-| full    | | full   | | incr by  | |(REST    | |(GraphQL| | child    |
-| refresh)| | refresh| | committed| | child of| | incr by| | of PRs)  |
-|         | | child  | | _date)   | | commits)| | updated| |          |
-|         | | of     | |          | |         | | _at)   | |          |
-|         | | repos) | |          | |         | |        | |          |
-+---------+ +--------+ +----------+ +---------+ +---+----+ +----------+
-                                                     |
-                                              +------+------+
-                                              |             |
-                                         +----v---+  +------v--------+
-                                         |pr_     |  |pr_commits     |
-                                         |comments|  |(GraphQL       |
-                                         |(REST   |  | child of PRs) |
-                                         | repo   |  |               |
-                                         | incr)  |  |               |
-                                         +--------+  +---------------+
++----v----+ +---v----+ +--v-------+ +v-------+ +v---------+
+|repos    | |branches| |commits   | |pull    | |pr_reviews|
+|(REST    | |(REST   | |(GraphQL  | |requests| |(REST     |
+| full    | | full   | | incr by  | |(GraphQL| | child    |
+| refresh)| | refresh| | committed| | incr by| | of PRs)  |
+|         | | child  | | _date)   | | updated| |          |
+|         | | of     | |          | | _at)   | |          |
+|         | | repos) | |          | |        | |          |
++---------+ +--------+ +----+-----+ +---+----+ +----------+
+                             |           |
+                             +-----+-----+------+
+                                   |             |
+                             +-----v-----+ +----v---+  +------v--------+
+                             |file       | |pr_     |  |pr_commits     |
+                             |_changes   | |comments|  |(GraphQL       |
+                             |(REST      | |(REST   |  | child of PRs) |
+                             | PR files +| | repo   |  |               |
+                             | direct    | | incr)  |  |               |
+                             | push)     | +--------+  +---------------+
+                             +-----------+
      |
 +----v-------------------------------------------------------------------+
 |  Shared Infrastructure                                                  |
@@ -122,7 +123,7 @@ Fault tolerance is achieved through Airbyte CDK retry semantics, slice-level and
      |
 +----v-------------------------------------------------------------------+
 |  Bronze Tables (bronze_github database in ClickHouse via Airbyte)       |
-|  repositories, branches, commits, commit_files,                         |
+|  repositories, branches, commits, file_changes,                         |
 |  pull_requests, pull_request_reviews, pull_request_comments,            |
 |  pull_request_commits                                                   |
 +----+-------------------------------------------------------------------+
@@ -229,7 +230,7 @@ The connector MUST conform to the Airbyte Python CDK contract: subclass `Abstrac
 | `RepositoriesStream` | REST `GET /orgs/{org}/repos` | Full refresh | - | `bronze_github.repositories` |
 | `BranchesStream` | REST `GET /repos/{o}/{r}/branches` | Full refresh | `RepositoriesStream` | `bronze_github.branches` |
 | `CommitsStream` | GraphQL `BULK_COMMIT_QUERY` (100/page) | Incremental (`committed_date`) | - | `bronze_github.commits` |
-| `CommitFilesStream` | REST `GET /repos/{o}/{r}/commits/{sha}` | Full refresh | `CommitsStream` | `bronze_github.commit_files` |
+| `FileChangesStream` | REST `GET /pulls/{n}/files` + `GET /repos/{o}/{r}/commits/{sha}` | Per-partition incremental (`synced_at` per PR, `seen` per commit) | `PullRequestsStream` (PR files), `CommitsStream` (direct-push files) | `bronze_github.file_changes` |
 | `PullRequestsStream` | GraphQL `BULK_PR_QUERY` (50/page) | Incremental (`updated_at`) | - | `bronze_github.pull_requests` |
 | `PullRequestReviewsStream` | REST `GET /pulls/{n}/reviews` | Full refresh | `PullRequestsStream` | `bronze_github.pull_request_reviews` |
 | `PullRequestCommentsStream` | REST `GET /issues/comments?since=` + `GET /pulls/comments?since=` | Repo-level incremental | - | `bronze_github.pull_request_comments` |
@@ -237,7 +238,8 @@ The connector MUST conform to the Airbyte Python CDK contract: subclass `Abstrac
 
 **Relationships**:
 - `RepositoriesStream` 1:N -> `BranchesStream` (child stream, repos provide slices)
-- `CommitsStream` 1:N -> `CommitFilesStream` (child stream, commits provide slices)
+- `PullRequestsStream` 1:N -> `FileChangesStream` (PR file changes; PRs provide slices)
+- `CommitsStream` 1:N -> `FileChangesStream` (direct-push file changes; default branch non-merge commits provide slices)
 - `PullRequestsStream` 1:N -> `PullRequestReviewsStream`, `PullRequestCommitsStream` (child streams, PRs provide slices via `get_child_slices()`)
 - `PullRequestCommentsStream` operates at repo level (not a child of PRs)
 - Repositories and branches use in-memory atomic cache for child stream reuse
@@ -266,8 +268,7 @@ Entry point for the Airbyte connector. Subclasses `AbstractSource` from the Airb
 ##### Related components (by ID)
 
 - `cpt-insightspec-component-gh-auth` — provides auth headers for connection check
-- `cpt-insightspec-component-gh-rest-base` — base class for REST streams
-- `cpt-insightspec-component-gh-graphql-base` — base class for GraphQL streams
+- `cpt-insightspec-component-gh-stream-bases` — base classes for REST and GraphQL streams
 
 ---
 
@@ -492,7 +493,7 @@ sequenceDiagram
     participant Repos as RepositoriesStream (REST)
     participant Branches as BranchesStream (REST)
     participant Commits as CommitsStream (GraphQL)
-    participant Files as CommitFilesStream (REST)
+    participant Files as FileChangesStream (REST)
     participant PRs as PullRequestsStream (GraphQL)
     participant Reviews as PullRequestReviewsStream (REST)
     participant Comments as PullRequestCommentsStream (REST)
@@ -534,13 +535,17 @@ sequenceDiagram
     end
     Airbyte ->> Bronze: Write to bronze_github.commits
 
-    Note over Airbyte,Bronze: Stream: commit_files (child of commits)
+    Note over Airbyte,Bronze: Stream: file_changes (dual-parent: PRs + commits)
     Airbyte ->> Files: read_records(stream_slice)
-    loop For each commit (bounded concurrent, 5 workers)
-        Files ->> Files: GET /repos/{o}/{r}/commits/{sha}
-        Files -->> Airbyte: AirbyteMessage per file
+    loop Phase 1: PR files (bounded concurrent, 5 workers)
+        Files ->> Files: GET /pulls/{n}/files (per PR)
+        Files -->> Airbyte: AirbyteMessage per file (source_type="pr")
     end
-    Airbyte ->> Bronze: Write to bronze_github.commit_files
+    loop Phase 2: Direct-push files (default branch, non-merge only)
+        Files ->> Files: GET /repos/{o}/{r}/commits/{sha}
+        Files -->> Airbyte: AirbyteMessage per file (source_type="direct_push")
+    end
+    Airbyte ->> Bronze: Write to bronze_github.file_changes
 
     Note over Airbyte,Bronze: Stream: pull_requests (incremental by updated_at)
     Airbyte ->> PRs: read_records(stream_state)
@@ -646,7 +651,7 @@ The Airbyte destination writes 8 Bronze tables, one per stream. Each table store
 | `repositories` | `RepositoriesStream` | org, repo name, metadata (stars, forks, language, etc.) |
 | `branches` | `BranchesStream` | org, repo, branch name, HEAD SHA |
 | `commits` | `CommitsStream` | org, repo, commit SHA, author, committer, stats, committed_date |
-| `commit_files` | `CommitFilesStream` | org, repo, commit SHA, file path, additions, deletions, status |
+| `file_changes` | `FileChangesStream` | org, repo, file path, additions, deletions, status, source_type (`"pr"` / `"direct_push"`), pr_number (nullable) |
 | `pull_requests` | `PullRequestsStream` | org, repo, PR number, title, state, author, dates, stats |
 | `pull_request_reviews` | `PullRequestReviewsStream` | org, repo, PR number, reviewer, state, submitted_at |
 | `pull_request_comments` | `PullRequestCommentsStream` | org, repo, comment ID, body, author, created_at |
@@ -656,73 +661,13 @@ Bronze tables are not directly queried by analytics. dbt transforms them into Si
 
 ---
 
-#### Table: `git_commits_files_ext`
-
-**ID**: `cpt-insightspec-dbtable-gh-commits-files-ext`
+#### Enrichment Table: `git_commits_files_ext`
 
 **Schema reference**: `docs/components/connectors/git/README.md` -> `git_commits_files_ext`
 
-**Schema**:
+This table is defined in the unified git schema (`docs/components/connectors/git/README.md`), not in this connector's scope. The GitHub connector provides the anchor rows in `git_commit_files` (via Bronze -> Silver dbt) that enrichment pipelines join against. The `git_commits_files_ext` table itself is populated by AI detection and ScanCode pipelines, which are separate systems.
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| `tenant_id` | UUID | REQUIRED | Tenant identifier -- injected by framework |
-| `source_instance_id` | String | REQUIRED | Source instance identifier (e.g. `github-acme-prod`) |
-| `id` | Int64 | PRIMARY KEY | Auto-generated unique identifier |
-| `project_key` | String | REQUIRED | Repository owner (org login) -- joins to `git_commit_files.project_key` |
-| `repo_slug` | String | REQUIRED | Repository name -- joins to `git_commit_files.repo_slug` |
-| `commit_hash` | String | REQUIRED | Commit SHA -- joins to `git_commit_files.commit_hash` |
-| `file_path` | String | REQUIRED | File path -- joins to `git_commit_files.file_path` |
-| `field_id` | String | REQUIRED | Machine identifier for the property (e.g. `ai_thirdparty_flag`, `scancode_metadata`) |
-| `field_name` | String | REQUIRED | Human-readable label for the property (e.g. `"AI Third-party Flag"`) |
-| `field_value_str` | String | NULLABLE | String / JSON value; NULL when the property is purely numeric |
-| `field_value_int` | Int64 | NULLABLE | Integer or boolean (0/1) value; NULL when the property is not an integer |
-| `field_value_float` | Float64 | NULLABLE | Fractional numeric value; NULL when the property is not a float |
-| `collected_at` | DateTime64(3) | REQUIRED | When this property was collected/computed |
-| `data_source` | String | DEFAULT '' | Source discriminator -- `'insight_github'` for GitHub-originated files |
-| `_version` | UInt64 | REQUIRED | Deduplication version (Unix ms) |
-
-**PK**: `id`
-
-**Indexes**:
-- `idx_commit_file_ext_lookup`: `(tenant_id, source_instance_id, project_key, repo_slug, commit_hash, file_path, field_id, data_source)`
-- `idx_file_ext_field_id`: `(field_id)`
-
-**Populated by**: AI detection pipeline and ScanCode pipeline (separate from the GitHub connector). The GitHub connector itself does NOT write to this table; it provides the anchor rows in `git_commit_files` (via Bronze -> Silver dbt) that enrichment pipelines join against.
-
-**Common property keys**:
-- `ai_thirdparty_flag` -- AI-detected third-party code (0 or 1) -- value: `field_value_int`
-- `scancode_thirdparty_flag` -- License scanner detected third-party (0 or 1) -- value: `field_value_int`
-- `scancode_metadata` -- License and copyright scanning results for this file -- value: `field_value_str` (JSON)
-
-**Enrichment query example**:
-
-```sql
--- Join enrichment results with core commit file data
-SELECT
-    f.project_key,
-    f.repo_slug,
-    f.commit_hash,
-    f.file_path,
-    f.file_extension,
-    f.lines_added,
-    f.lines_removed,
-    MAX(CASE WHEN e.field_id = 'ai_thirdparty_flag'     THEN e.field_value_int END)  AS ai_thirdparty_flag,
-    MAX(CASE WHEN e.field_id = 'scancode_thirdparty_flag' THEN e.field_value_int END) AS scancode_thirdparty_flag,
-    MAX(CASE WHEN e.field_id = 'scancode_metadata'       THEN e.field_value_str END)  AS scancode_metadata
-FROM git_commit_files f
-LEFT JOIN git_commits_files_ext e
-    ON f.tenant_id = e.tenant_id
-    AND f.project_key = e.project_key
-    AND f.repo_slug = e.repo_slug
-    AND f.commit_hash = e.commit_hash
-    AND f.file_path = e.file_path
-    AND f.data_source = e.data_source
-WHERE f.tenant_id = '...'
-  AND f.data_source = 'insight_github'
-GROUP BY f.project_key, f.repo_slug, f.commit_hash, f.file_path,
-         f.file_extension, f.lines_added, f.lines_removed;
-```
+See the unified git schema for the full table definition, indexes, and enrichment query examples.
 
 ---
 
@@ -753,7 +698,8 @@ User-Agent: insight-github-connector/1.0
 |----------|--------|---------------|---------|
 | `/orgs/{org}/repos` | GET | `RepositoriesStream` | List organization repositories |
 | `/repos/{owner}/{repo}/branches` | GET | `BranchesStream` | List branches |
-| `/repos/{owner}/{repo}/commits/{sha}` | GET | `CommitFilesStream` | Get commit with file-level stats |
+| `/repos/{owner}/{repo}/commits/{sha}` | GET | `FileChangesStream` | Get direct-push file-level stats |
+| `/repos/{owner}/{repo}/pulls/{number}/files` | GET | `FileChangesStream` | Get PR file changes |
 | `/pulls/{number}/reviews` | GET | `PullRequestReviewsStream` | Get PR reviews |
 | `/issues/comments?since=` | GET | `PullRequestCommentsStream` | Get issue comments (repo-level incremental) |
 | `/pulls/comments?since=` | GET | `PullRequestCommentsStream` | Get review comments (repo-level incremental) |
@@ -795,8 +741,10 @@ Field mapping from Bronze to Silver is performed by dbt models, not by the conne
 - `files_changed`, `lines_added`, `lines_removed` from aggregate stats
 - `is_merge_commit` derived from parent count
 
-**Bronze `commit_files`** -> Silver `git_commit_files`:
+**Bronze `file_changes`** -> Silver `git_commit_files`:
 - `file_path`, `file_extension`, `change_type`, `lines_added`, `lines_removed` mapped from REST response
+- `source_type` discriminator (`"pr"` / `"direct_push"`) enables filtering by change origin
+- PR files carry `pr_number` and `pr_database_id`; direct-push files have these as NULL
 
 **Bronze `pull_requests`** -> Silver `git_pull_requests`:
 - `pr_id` from `databaseId`, `pr_number` from `number`
@@ -838,7 +786,7 @@ Field mapping from Bronze to Silver is performed by dbt models, not by the conne
 - `CommitsStream`: Airbyte CDK manages `committed_date` cursor. GraphQL `BULK_COMMIT_QUERY` uses `since=cursor_date`.
 - `PullRequestsStream`: Airbyte CDK manages `updated_at` cursor. GraphQL `BULK_PR_QUERY` ordered by `UPDATED_AT DESC`; early exit when `updatedAt < cursor`.
 - `PullRequestCommentsStream`: Custom repo-level `since` parameter for both `/issues/comments` and `/pulls/comments`.
-- Child streams (`CommitFilesStream`, `PullRequestReviewsStream`, `PullRequestCommitsStream`): use custom per-partition `_state` dicts (`synced_at` per PR, `seen` per commit).
+- Child streams (`FileChangesStream`, `PullRequestReviewsStream`, `PullRequestCommitsStream`): use custom per-partition `_state` dicts (`synced_at` per PR, `seen` per commit).
 
 **Error handling**:
 
@@ -881,7 +829,7 @@ At Silver Step 2:
 
 **Draft PRs**: The `isDraft` field is stored in `metadata` on `git_pull_requests`. Analytics requiring draft-aware filtering can extract this via JSON path or via a `git_pull_requests_ext` property.
 
-**GraphQL commit coverage**: The bulk commit GraphQL query provides aggregate stats (`additions`, `deletions`, `changedFiles`) but does NOT provide per-file breakdowns in bulk. Per-file stats require a separate REST call per commit via `CommitFilesStream`. For large repositories, consider accepting aggregate-only stats to reduce REST call volume (see OQ-GH-2 in PRD).
+**GraphQL commit coverage**: The bulk commit GraphQL query provides aggregate stats (`additions`, `deletions`, `changedFiles`) but does NOT provide per-file breakdowns in bulk. Per-file stats require a separate REST call per commit via `FileChangesStream` (direct-push path). For large repositories, consider accepting aggregate-only stats to reduce REST call volume (see OQ-GH-2 in PRD).
 
 ---
 
