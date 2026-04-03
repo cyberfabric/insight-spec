@@ -116,7 +116,7 @@ Primary key composed of business-meaningful columns (e.g., `(tenant_id, email, s
 
 ## More Information
 
-**SCD Type 2 exception**: For versioned/historical tables (e.g., person version history, org unit history), each row still has `id UUID` as PK, plus a logical entity reference (`person_id UUID` FK to the entity table). This is not the INT+UUID anti-pattern -- both columns are UUIDs, and they serve different purposes (row identity vs entity identity). See [README.md section 2.2](../README.md#22-scd-type-2--versioned-tables).
+**SCD Type 2 note**: SCD2 versioning in Insight is handled by dbt-macros in ClickHouse, not in MariaDB. See [README.md section 14](../README.md#14-proposals-with-known-contradictions) for details. If a MariaDB table does reference the same logical entity across multiple rows (e.g., temporal validity), each row still has `id UUID` as PK, plus a logical entity reference (`person_id UUID` FK). This is not the INT+UUID anti-pattern -- both columns are UUIDs, and they serve different purposes (row identity vs entity identity).
 
 **ClickHouse tables** do not use UUID as PK in the RDBMS sense. ClickHouse uses composite `ORDER BY` keys optimised for analytical queries. UUID columns exist for filtering and joining but are placed last in ORDER BY (if at all).
 
