@@ -338,6 +338,30 @@ path = "docs/domain/airbyte-connector/specs/DESIGN.md"
 name = "Airbyte Connector Development Guide"
 traceability = "DOCS-ONLY"
 
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/components/backend/specs/PRD.md"
+name = "Backend PRD"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/components/backend/specs/ADR/0001-redpanda-over-kafka.md"
+name = "ADR-0001: Redpanda over Kafka"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "DECOMPOSITION"
+path = "docs/components/backend/specs/DECOMPOSITION.md"
+name = "Backend Decomposition"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/components/backend/specs/DESIGN.md"
+name = "Backend Architecture"
+traceability = "DOCS-ONLY"
+
 [[systems]]
 name = "Orchestrator"
 slug = "orch"
