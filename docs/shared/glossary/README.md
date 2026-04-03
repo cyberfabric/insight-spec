@@ -31,30 +31,30 @@ This document defines mandatory naming patterns and data types for columns that 
   - [4.3 Job / Processing Timestamps](#43-job--processing-timestamps)
   - [4.4 Event Timestamps](#44-event-timestamps)
 - [5. Foreign Key References](#5-foreign-key-references)
-- [6. Hash & Change Detection](#6-hash--change-detection)
-- [7. ClickHouse-Specific Conventions](#7-clickhouse-specific-conventions)
+- [6. ClickHouse-Specific Conventions](#6-clickhouse-specific-conventions)
   - [ORDER BY Key Design](#order-by-key-design)
   - [Nullable](#nullable)
   - [LowCardinality](#lowcardinality)
   - [Partitioning](#partitioning)
   - [TTL](#ttl)
-- [8. MariaDB-Specific Conventions](#8-mariadb-specific-conventions)
+- [7. MariaDB-Specific Conventions](#7-mariadb-specific-conventions)
   - [UUID Type](#uuid-type)
   - [DATETIME Precision](#datetime-precision)
   - [Character Sets](#character-sets)
-- [9. Boolean Fields](#9-boolean-fields)
-- [10. Soft-Delete](#10-soft-delete)
-- [11. Observation Timestamps](#11-observation-timestamps)
-- [12. String Length Tiers](#12-string-length-tiers)
-- [13. Anti-Patterns](#13-anti-patterns)
-- [14. Proposals](#14-proposals)
+- [8. Boolean Fields](#8-boolean-fields)
+- [9. Soft-Delete](#9-soft-delete)
+- [10. Observation Timestamps](#10-observation-timestamps)
+- [11. String Length Tiers](#11-string-length-tiers)
+- [12. Anti-Patterns](#12-anti-patterns)
+- [13. Proposals](#13-proposals)
   - [P1: Hierarchy & Tree Fields](#p1-hierarchy--tree-fields)
   - [P2: Status & Enum Fields](#p2-status--enum-fields)
   - [P3: Actor / Audit Attribution](#p3-actor--audit-attribution)
   - [P4: Confidence & Scoring Fields](#p4-confidence--scoring-fields)
   - [P5: JSON / Flexible Storage](#p5-json--flexible-storage)
-  - [P6: Business Temporal Validity in MariaDB](#p6-business-temporal-validity-in-mariadb)
-- [15. Proposals with Known Contradictions](#15-proposals-with-known-contradictions)
+  - [P6: Hash & Change Detection](#p6-hash--change-detection)
+  - [P7: Business Temporal Validity in MariaDB](#p7-business-temporal-validity-in-mariadb)
+- [14. Proposals with Known Contradictions](#14-proposals-with-known-contradictions)
   - [SCD Type 2 in MariaDB](#scd-type-2-in-mariadb)
   - [MariaDB Partial Index Workaround](#mariadb-partial-index-workaround)
 
@@ -227,22 +227,13 @@ For ClickHouse event tables (audit log, analytics):
 - FK column name matches the referenced table's logical entity: `person_id`, `org_unit_id`, `metric_id`
 - `insight_tenant_id` is a special case (see [section 3](#3-tenant--source-isolation))
 - When the same entity is referenced twice in one table, prefix with role: `source_person_id`, `target_person_id`, `manager_person_id`
-- Self-referential FK for hierarchies: `parent_id UUID NULL` — `NULL` means root node. Application must prevent circular references. Materialised path fields (`path`, `depth`) are proposed in [section 14](#14-proposals)
+- Self-referential FK for hierarchies: `parent_id UUID NULL` — `NULL` means root node. Application must prevent circular references. Materialised path fields (`path`, `depth`) are proposed in [section 13](#13-proposals)
 
 Concrete FK lists per domain will be defined in corresponding DESIGN documents.
 
 ---
 
-## 6. Hash & Change Detection
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `record_hash` | `VARCHAR(64)` | SHA-256 hex of canonical attribute set for change detection |
-| `version` | `INT NOT NULL DEFAULT 1` | Monotonic counter for optimistic locking |
-
----
-
-## 7. ClickHouse-Specific Conventions
+## 6. ClickHouse-Specific Conventions
 
 ### ORDER BY Key Design
 
@@ -295,7 +286,7 @@ Always define TTL on event tables. Configurable per tenant via application logic
 
 ---
 
-## 8. MariaDB-Specific Conventions
+## 7. MariaDB-Specific Conventions
 
 ### UUID Type
 
@@ -316,7 +307,7 @@ Use `utf8mb4` character set and `utf8mb4_unicode_ci` collation for all string co
 
 ---
 
-## 9. Boolean Fields
+## 8. Boolean Fields
 
 Use `BOOL` (MariaDB alias for `TINYINT(1)`) with `is_` prefix:
 
@@ -341,7 +332,7 @@ is_deleted  UInt8 DEFAULT 0
 
 ---
 
-## 10. Soft-Delete
+## 9. Soft-Delete
 
 Use `deleted_at` timestamp (not boolean flag) for soft-delete:
 
@@ -360,7 +351,7 @@ deleted_at DATETIME(3) NULL DEFAULT NULL
 
 ---
 
-## 11. Observation Timestamps
+## 10. Observation Timestamps
 
 For records that track when something was first/last observed (e.g., unmapped aliases, sync status):
 
@@ -377,7 +368,7 @@ For records that track when something was first/last observed (e.g., unmapped al
 
 ---
 
-## 12. String Length Tiers
+## 11. String Length Tiers
 
 Use consistent `VARCHAR` lengths based on content type:
 
@@ -397,7 +388,7 @@ Use consistent `VARCHAR` lengths based on content type:
 
 ---
 
-## 13. Anti-Patterns
+## 12. Anti-Patterns
 
 | Anti-pattern | Why | Do instead |
 |-------------|-----|-----------|
@@ -416,7 +407,7 @@ Use consistent `VARCHAR` lengths based on content type:
 
 ---
 
-## 14. Proposals
+## 13. Proposals
 
 Conventions proposed but not yet confirmed. Will be finalized when the corresponding domain modules are designed.
 
@@ -469,7 +460,16 @@ Rules: always UUID FK, never username strings. For grant/revoke: `granted_by UUI
 
 Use JSON columns sparingly for genuinely dynamic data (`config`, `parameters`, `snapshot_before`, `snapshot_after`). JSON field names follow `snake_case`. Do NOT store queryable data in JSON. ClickHouse: use `String` type.
 
-### P6: Business Temporal Validity in MariaDB
+### P6: Hash & Change Detection
+
+> **Scope**: identity-resolution, connector sync
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `record_hash` | `VARCHAR(64)` | SHA-256 hex of canonical attribute set for change detection |
+| `version` | `INT NOT NULL DEFAULT 1` | Monotonic counter for optimistic locking |
+
+### P7: Business Temporal Validity in MariaDB
 
 > **Scope**: org-chart module (future)
 
@@ -479,7 +479,7 @@ Use JSON columns sparingly for genuinely dynamic data (`config`, `parameters`, `
 
 ---
 
-## 15. Proposals with Known Contradictions
+## 14. Proposals with Known Contradictions
 
 Patterns that were initially considered but contradict the adopted SCD mechanism (dbt-macros with `*_snapshot` and `fields_history` tables in ClickHouse). Documented for context — not to be implemented.
 
