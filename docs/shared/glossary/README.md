@@ -57,6 +57,9 @@ This document defines mandatory naming patterns and data types for columns that 
 - [14. Proposals with Known Contradictions](#14-proposals-with-known-contradictions)
   - [SCD Type 2 in MariaDB](#scd-type-2-in-mariadb)
   - [MariaDB Partial Index Workaround](#mariadb-partial-index-workaround)
+- [15. Known Convention Violations](#15-known-convention-violations)
+  - [Code](#code)
+  - [Spec documents](#spec-documents)
 
 <!-- /toc -->
 
@@ -94,11 +97,11 @@ id UUID NOT NULL DEFAULT uuid_v7() PRIMARY KEY
 id UUID DEFAULT generateUUIDv7()
 ```
 
-> In ClickHouse `id` is a column, not a PK in the RDBMS sense. It should appear **last** in the `ORDER BY` key (if at all) — never first. See [section 11](#11-clickhouse-specific-conventions).
+> In ClickHouse `id` is a column, not a PK in the RDBMS sense. It should appear **last** in the `ORDER BY` key (if at all) — never first. See [section 6](#6-clickhouse-specific-conventions).
 
 **Foreign key references** use the pattern `{entity}_id`:
 
-```
+```sql
 person_id       UUID    -- FK to person.id
 org_unit_id     UUID    -- FK to org_unit.id
 metric_id       UUID    -- FK to metric.id
@@ -120,7 +123,7 @@ The identity-resolution DESIGN (PR #54) proposed `id INT AUTO_INCREMENT` as PK w
 
 **Decision**: the marginal InnoDB performance benefit of INT surrogates does not justify the complexity for Insight's metadata workloads (thousands to low millions of rows per tenant). UUIDv7 provides near-sequential ordering. All services, events, logs, and APIs use one identifier per entity.
 
-**Exception**: ClickHouse Bronze/Silver tables do NOT use UUID PKs — they use composite `ORDER BY` keys optimised for analytical queries. See [section 11](#11-clickhouse-specific-conventions).
+**Exception**: ClickHouse Bronze/Silver tables do NOT use UUID PKs — they use composite `ORDER BY` keys optimised for analytical queries. See [section 6](#6-clickhouse-specific-conventions).
 
 ---
 
@@ -490,3 +493,21 @@ An earlier draft proposed SCD2 versioning directly in MariaDB tables (entity anc
 ### MariaDB Partial Index Workaround
 
 An earlier draft proposed a generated column `is_current` to emulate PostgreSQL partial unique indexes in MariaDB (`WHERE effective_to IS NULL`). This workaround is unnecessary if SCD2 versioning is not in MariaDB. For **business temporal validity** tables (e.g., org memberships with `effective_from`/`effective_to`), the uniqueness constraint will be defined when the org-chart module is designed.
+
+---
+
+## 15. Known Convention Violations
+
+Existing code and specs that conflict with the adopted conventions. To be updated as part of follow-up work.
+
+### Code
+
+| File | Violation | Convention |
+|------|-----------|------------|
+| `src/ingestion/connectors/hr-directory/bamboohr/dbt/to_class_people.sql:16` | `CAST(NULL AS Nullable(DateTime))` for `valid_to` | ClickHouse Nullable avoidance (section 6); use sentinel value (e.g., `'1970-01-01'`) instead of `Nullable` |
+| `src/ingestion/connectors/hr-directory/bamboohr/dbt/to_class_people.sql:12` | bare `tenant_id` | `insight_tenant_id` (section 3.1) |
+| `src/ingestion/connectors/hr-directory/bamboohr/dbt/to_class_people.sql:15` | `valid_from` / `valid_to` | `effective_from` / `effective_to` (section 4.2) |
+
+### Spec documents
+
+See PR #55 summary for the full list of spec-level violations across ~25 documents (~270+ bare `tenant_id` references, `valid_from/valid_to`, `performed_by VARCHAR`, `INT` PKs, `TIMESTAMP` types).

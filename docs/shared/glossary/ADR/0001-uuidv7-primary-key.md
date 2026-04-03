@@ -74,7 +74,7 @@ Single `id UUID DEFAULT uuid_v7()` column serves as both PK and external identif
 * Good, because single identifier everywhere -- zero mapping complexity
 * Good, because UUIDv7 is time-ordered -- near-sequential inserts, ~90% InnoDB page fill
 * Good, because MariaDB 10.7+ native `UUID` type stores 16 bytes internally (not 36-byte CHAR)
-* Good, because `uuid_v7()` built into MariaDB 11.4+ (or application-generated for earlier versions)
+* Good, because `uuid_v7()` built into MariaDB 11.7+ (or application-generated for earlier versions)
 * Good, because globally unique without central authority -- safe for cross-service, cross-tenant references
 * Neutral, because 16-byte PK is larger than 4-byte INT but smaller than 36-byte CHAR(36)
 * Bad, because secondary indexes carry 16-byte PK values (4x larger than INT per index entry)
@@ -120,7 +120,7 @@ Primary key composed of business-meaningful columns (e.g., `(tenant_id, email, s
 
 **ClickHouse tables** do not use UUID as PK in the RDBMS sense. ClickHouse uses composite `ORDER BY` keys optimised for analytical queries. UUID columns exist for filtering and joining but are placed last in ORDER BY (if at all).
 
-**MariaDB version**: native `UUID` type requires MariaDB 10.7+. `uuid_v7()` function requires MariaDB 11.4+ (or application-side generation with the `uuid` Rust crate).
+**MariaDB version**: native `UUID` type requires MariaDB 10.7+. `uuid_v7()` function requires MariaDB 11.7+ (or application-side generation with the `uuid` Rust crate).
 
 **References**:
 - [RFC 9562 -- UUIDs](https://www.rfc-editor.org/rfc/rfc9562) -- UUIDv7 specification

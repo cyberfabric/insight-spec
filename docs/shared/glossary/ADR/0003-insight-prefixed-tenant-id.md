@@ -50,7 +50,7 @@ Chosen option: "`insight_tenant_id` (prefixed)", because it eliminates name coll
 * Good, because grep for `insight_tenant_id` returns only platform references; grep for `azure_tenant_id` returns only Azure references
 * Good, because eliminates the need for per-context disambiguation rules (which `tenant_id` is this?)
 * Bad, because longer column name (19 chars vs 9) -- minor ergonomic cost
-* Bad, because all existing DESIGN documents (backend PR #49, identity-resolution PR #54) must be updated -- `tenant_id` → `insight_tenant_id` across ~50 column definitions
+* Bad, because existing DESIGN documents across the project require `tenant_id` → `insight_tenant_id` renaming -- see [Known Convention Violations](../README.md#15-known-convention-violations) for the full list
 * Bad, because deviates from the common `{entity}_id` naming pattern -- but this is intentional, as `insight_tenant_id` is a platform-level qualifier, not a simple FK
 
 ### Confirmation
@@ -58,7 +58,7 @@ Chosen option: "`insight_tenant_id` (prefixed)", because it eliminates name coll
 * All MariaDB `CREATE TABLE` statements use `insight_tenant_id`, not `tenant_id`
 * All ClickHouse table definitions use `insight_tenant_id`
 * All Redpanda message schemas include `insight_tenant_id`
-* Code search: `grep -r "tenant_id" --include="*.rs"` should return only `insight_tenant_id` (no bare `tenant_id`)
+* Code search: `grep -r "tenant_id" --include="*.rs" --include="*.sql" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.toml"` should return only `insight_tenant_id` (no bare `tenant_id`)
 * Connector config fields: `insight_tenant_id` in `connection_specification`, `azure_tenant_id` for Azure -- no collision
 
 ## Pros and Cons of the Options

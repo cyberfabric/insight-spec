@@ -54,7 +54,7 @@ Adopt the six conventions documented below as mandatory for all internal Insight
 * Good, because aligns with existing API Guideline and ClickHouse/MariaDB best practices
 * Good, because new services can follow the convention document without reading every existing schema
 * Bad, because PR #54 (identity-resolution DESIGN) requires updates to comply -- `valid_from/valid_to` renamed, `tenant_id` → `insight_tenant_id`, `performed_by` replaced with UUID FK
-* Bad, because PR #49 (backend DESIGN) requires updates -- `tenant_id` → `insight_tenant_id` across all table definitions
+* Bad, because existing DESIGN documents across the project (backend, ingestion, connector, individual connectors) require `tenant_id` → `insight_tenant_id` renaming -- see [Known Convention Violations](../README.md#15-known-convention-violations)
 * Bad, because conventions add constraints that may feel rigid for edge cases -- exceptions must be documented
 
 ### Confirmation
