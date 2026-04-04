@@ -13,7 +13,7 @@ SELECT
     COALESCE(p.email, '') AS user_email,
     p.join_time AS activity_date,
     'meeting_participation' AS event_type,
-    p.duration AS duration_seconds,
+    dateDiff('second', parseDateTimeBestEffort(p.join_time), parseDateTimeBestEffort(p.leave_time)) AS duration_seconds,
     'zoom' AS source
 FROM {{ source('bronze_zoom', 'participants') }} p
 {% if is_incremental() %}
