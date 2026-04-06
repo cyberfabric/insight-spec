@@ -38,12 +38,18 @@ for sf in state_files:
 " 2>/dev/null)
 [[ -n "$CONNECTION_ID" ]] || { echo "ERROR: no connection_id for connector '$CONNECTOR' tenant '$TENANT'. Run update-connections.sh first." >&2; exit 1; }
 
-# Find connector name for descriptor lookup (strip source_id suffix if present)
-CONNECTOR_NAME="${CONNECTOR%%-*}"
-DBT_SELECT=$(find connectors -name descriptor.yaml -exec grep -l "name: ${CONNECTOR_NAME}" {} \; | head -1 | xargs yq -r '.dbt_select // "+tag:silver"' 2>/dev/null)
-
-# Resolve Airbyte token for API calls
-source ./scripts/resolve-airbyte-env.sh
+# Find descriptor by connector name — try exact match, then prefix match
+DBT_SELECT=$(python3 -c "
+import yaml, pathlib, sys
+connector = '${CONNECTOR}'
+for p in sorted(pathlib.Path('connectors').rglob('descriptor.yaml')):
+    desc = yaml.safe_load(open(p))
+    name = desc.get('name', '')
+    if name == connector or connector.startswith(name + '-'):
+        print(desc.get('dbt_select', '+tag:silver'))
+        sys.exit(0)
+print('+tag:silver')
+" 2>/dev/null)
 
 echo "Running sync: ${CONNECTOR} / ${TENANT}"
 echo "  connection_id: ${CONNECTION_ID}"
@@ -73,8 +79,6 @@ spec:
                   value: "${CONNECTION_ID}"
                 - name: dbt_select
                   value: "${DBT_SELECT}"
-                - name: airbyte_token
-                  value: "${AIRBYTE_TOKEN}"
 EOF
 
 echo "Workflow submitted. Monitor at http://localhost:30500 or:"

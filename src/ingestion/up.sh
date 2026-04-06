@@ -94,6 +94,16 @@ helm upgrade --install airbyte airbyte/airbyte \
 kubectl scale deployment -n airbyte --all --replicas=1 2>/dev/null || true
 kubectl scale statefulset -n airbyte --all --replicas=1 2>/dev/null || true
 
+# --- Copy Airbyte auth secret to argo namespace (for JWT minting in workflow steps) ---
+echo "=== Syncing Airbyte auth secret to argo namespace ==="
+if kubectl get secret airbyte-auth-secrets -n airbyte &>/dev/null; then
+  kubectl get secret airbyte-auth-secrets -n airbyte -o json \
+    | python3 -c "import sys,json; s=json.load(sys.stdin); print(json.dumps({'apiVersion':'v1','kind':'Secret','type':'Opaque','metadata':{'name':'airbyte-auth-secrets','namespace':'argo'},'data':s['data']}))" \
+    | kubectl apply -f -
+else
+  echo "  WARNING: airbyte-auth-secrets not found in airbyte namespace (Airbyte may still be starting)"
+fi
+
 # --- ClickHouse (requires clickhouse-credentials Secret) ---
 if has_secret clickhouse-credentials data; then
   echo "=== Deploying ClickHouse ==="

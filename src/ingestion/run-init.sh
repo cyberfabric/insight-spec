@@ -16,15 +16,77 @@ if ! kubectl get secret clickhouse-credentials -n data &>/dev/null; then
   exit 1
 fi
 
-# --- Grant toolbox access ---
-kubectl create clusterrolebinding toolbox-admin \
-  --clusterrole=cluster-admin \
-  --serviceaccount=data:default \
-  --dry-run=client -o yaml | kubectl apply -f -
+# --- Create dedicated ServiceAccount with minimal RBAC ---
+kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ingestion-init
+  namespace: data
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ingestion-init
+  namespace: data
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec"]
+    verbs: ["get", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ingestion-init
+  namespace: data
+subjects:
+  - kind: ServiceAccount
+    name: ingestion-init
+    namespace: data
+roleRef:
+  kind: Role
+  name: ingestion-init
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ingestion-init-airbyte
+  namespace: airbyte
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ingestion-init-airbyte
+  namespace: airbyte
+subjects:
+  - kind: ServiceAccount
+    name: ingestion-init
+    namespace: data
+roleRef:
+  kind: Role
+  name: ingestion-init-airbyte
+  apiGroup: rbac.authorization.k8s.io
+EOF
 
 # --- Run init job ---
 echo "=== Running init job ==="
 kubectl delete job ingestion-init -n data --ignore-not-found 2>/dev/null
+
+TOOLBOX_IMAGE="${TOOLBOX_IMAGE:-ghcr.io/cyberfabric/insight-toolbox:latest}"
 
 kubectl apply -f - <<EOF
 apiVersion: batch/v1
@@ -37,11 +99,12 @@ spec:
   ttlSecondsAfterFinished: 300
   template:
     spec:
+      serviceAccountName: ingestion-init
       restartPolicy: Never
       containers:
         - name: init
           image: ${TOOLBOX_IMAGE}
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           command: [bash, /ingestion/scripts/init.sh]
           env:
             - name: KUBECONFIG

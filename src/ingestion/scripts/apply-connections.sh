@@ -73,28 +73,27 @@ def api_get(path, data):
 import subprocess, base64
 
 def discover_secrets():
-    """Discover Insight connector Secrets by label app.kubernetes.io/part-of=insight."""
-    try:
-        result = subprocess.run(
-            ["kubectl", "get", "secrets", "-l", "app.kubernetes.io/part-of=insight",
-             "--all-namespaces", "-o", "json"],
-            capture_output=True, text=True, timeout=30
-        )
-        if result.returncode != 0:
-            print(f"  WARNING: kubectl get secrets failed: {result.stderr.strip()}", file=sys.stderr)
-            return []
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        print(f"  WARNING: kubectl not available or timed out: {e}", file=sys.stderr)
-        return []
+    """Discover Insight connector Secrets by label in 'data' namespace."""
+    result = subprocess.run(
+        ["kubectl", "get", "secrets", "-n", "data",
+         "-l", "app.kubernetes.io/part-of=insight", "-o", "json"],
+        capture_output=True, text=True, timeout=30
+    )
+    if result.returncode != 0:
+        print(f"  ERROR: kubectl get secrets failed: {result.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
 
     secrets = []
     items = json.loads(result.stdout).get("items", [])
     for item in items:
         annotations = item.get("metadata", {}).get("annotations", {})
         connector = annotations.get("insight.cyberfabric.com/connector")
-        source_id = annotations.get("insight.cyberfabric.com/source-id")
         if not connector:
             continue
+        source_id = annotations.get("insight.cyberfabric.com/source-id")
+        if not source_id:
+            print(f"  ERROR: Secret '{item['metadata']['name']}' missing annotation insight.cyberfabric.com/source-id", file=sys.stderr)
+            sys.exit(1)
         data = {}
         for k, v in item.get("data", {}).items():
             try:
@@ -112,7 +111,7 @@ def discover_secrets():
                 data[k] = raw
         secrets.append({
             "connector": connector,
-            "source_id": source_id or connector,
+            "source_id": source_id,
             "data": data,
             "name": item["metadata"]["name"],
         })
@@ -242,7 +241,12 @@ for connector_name, source_id_label, config in connector_instances:
     # Create ClickHouse database
     db_name = descriptor.get("connection", {}).get("namespace", f"bronze_{connector_name}")
     print(f"    Creating database: {db_name}")
-    os.system(f'kubectl exec -n data deploy/clickhouse -- clickhouse-client --password {ch_password} --query "CREATE DATABASE IF NOT EXISTS {db_name}" 2>/dev/null')
+    subprocess.run(
+        ["kubectl", "exec", "-n", "data", "deploy/clickhouse", "--",
+         "clickhouse-client", "--password", ch_password,
+         "--query", f"CREATE DATABASE IF NOT EXISTS {db_name}"],
+        capture_output=True, timeout=30
+    )
 
     # --- Source definition ID (from state, then from definitions state) ---
     def_id = conn_state.get("definition_id") or state.get("definitions", {}).get(connector_name)
