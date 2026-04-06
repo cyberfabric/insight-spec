@@ -11,6 +11,12 @@ model-paths:
 macro-paths:
   - macros
 
+seed-paths:
+  - seeds
+
+test-paths:
+  - tests
+
 clean-targets:
   - target
   - dbt_packages

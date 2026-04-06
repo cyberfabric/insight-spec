@@ -328,7 +328,7 @@ Provides the orchestration and connection metadata that links the extraction com
 
 ##### Responsibility scope
 
-Declares: connector name and version, type (nocode/cdk), cron schedule, workflow template, `dbt_select` expression, connection namespace (`bronze_{name}`), stream sync modes, Silver targets, and stream definitions (bronze_table, primary_key, cursor_field).
+Declares: connector name and version, cron schedule, workflow template, `dbt_select` expression, connection namespace (`bronze_{name}`), and stream name filter list.
 
 ##### Responsibility boundaries
 
@@ -935,7 +935,6 @@ Every Insight Connector package MUST include `descriptor.yaml`:
 ```yaml
 name: m365
 version: "1.0"
-type: nocode                    # "nocode" or "cdk"
 
 # Orchestration
 schedule: "0 2 * * *"
@@ -945,27 +944,9 @@ dbt_select: "tag:m365+"
 # Connection config (used by apply-connections.sh)
 connection:
   namespace: "bronze_m365"
-  streams:
-    - name: email_activity
-      sync_mode: full_refresh_overwrite
-    - name: teams_activity
-      sync_mode: full_refresh_overwrite
-
-# Silver layer targets
-silver_targets:
-  - class_comms_events
-
-# Stream definitions
-streams:
-  - name: email_activity
-    bronze_table: email_activity
-    primary_key: [unique_key]
-    cursor_field: reportRefreshDate
-  - name: teams_activity
-    bronze_table: teams_activity
-    primary_key: [unique_key]
-    cursor_field: reportRefreshDate
 ```
+
+All streams from the manifest are synced automatically. Sync mode is determined by Airbyte discover: `incremental` if supported, otherwise `full_refresh`.
 
 Field reference:
 
@@ -973,14 +954,10 @@ Field reference:
 |-------|----------|-------------|
 | `name` | Yes | Unique connector name |
 | `version` | Yes | Package version |
-| `type` | Yes | `nocode` or `cdk` |
 | `schedule` | Yes | Cron expression for automated sync |
 | `workflow` | Yes | Workflow template name |
 | `dbt_select` | Yes | dbt selector for transformations (use `+` suffix for downstream, e.g., `tag:m365+`) |
 | `connection.namespace` | Yes | ClickHouse database per connector (`bronze_{name}`, e.g., `bronze_m365`) |
-| `connection.streams` | Yes | Streams to sync with their sync mode |
-| `silver_targets` | Yes | Silver tables this connector populates |
-| `streams` | Yes | Stream definitions with bronze_table, primary_key, cursor_field |
 
 ### 4.11 Connector Package Structure
 
@@ -988,7 +965,7 @@ Field reference:
 connectors/{category}/{name}/
   connector.yaml              # Airbyte declarative manifest (nocode)
   descriptor.yaml             # Schedule, streams, dbt_select, workflow, connection config
-  credentials.yaml.example    # Template: required credentials (tracked in repo)
+  README.md                   # Connector documentation and K8s Secret fields
   schemas/                    # Generated JSON schemas per stream
     {stream_name}.json
   dbt/
@@ -1016,17 +993,17 @@ connectors/{category}/{name}/
 
 Credentials are never stored in the connector package:
 
-1. `credentials.yaml.example` documents required fields (tracked in repo)
-2. Tenant admins create `connections/{tenant}.yaml` with real values (gitignored)
-3. No `.env.local` -- credentials come from `connections/{tenant}.yaml`
+1. K8s Secret example files live in `src/ingestion/secrets/connectors/{name}.yaml.example` (tracked in repo)
+2. Real secrets are in `src/ingestion/secrets/connectors/{name}.yaml` (gitignored)
+3. `apply-connections.sh` discovers secrets by label and injects credentials into Airbyte
 
 ### 4.12 Development Workflow
 
 | Step | Command | What it does |
 |------|---------|-------------|
-| 1 | Create directory | `connectors/{category}/{name}/` with `connector.yaml`, `descriptor.yaml`, `credentials.yaml.example` |
+| 1 | Create directory | `connectors/{category}/{name}/` with `connector.yaml`, `descriptor.yaml`, `README.md` |
 | 2 | Write manifest | Use `definitions` + `$ref` pattern. Include AddFields for `tenant_id`, `source_id`, `unique_key` |
-| 3 | Create connection | Copy from `credentials.yaml.example`, create `connections/{tenant}.yaml` with test values |
+| 3 | Create K8s Secret | Copy from `secrets/connectors/{name}.yaml.example`, fill in real values, apply with `kubectl apply` |
 | 4 | Validate | `./tools/declarative-connector/source.sh validate {cat}/{name}` |
 | 5 | Check | `./tools/declarative-connector/source.sh check {cat}/{name}` |
 | 6 | Discover | `./tools/declarative-connector/source.sh discover {cat}/{name}` |

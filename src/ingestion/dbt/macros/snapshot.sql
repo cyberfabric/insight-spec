@@ -1,12 +1,14 @@
-{% macro snapshot(source_ref, unique_key_col, check_cols) %}
+{% macro snapshot(source_ref, unique_key_col, check_cols, check_raw_data_cols=[]) %}
 {#
   Incremental append-only SCD2 snapshot.
   Appends a new row only when tracked columns change.
 
   Args:
-    source_ref:      source() or ref() to the raw table
-    unique_key_col:  column that uniquely identifies an entity
-    check_cols:      list of columns to monitor for changes
+    source_ref:           source() or ref() to the raw table
+    unique_key_col:       column that uniquely identifies an entity
+    check_cols:           list of top-level columns to monitor for changes
+    check_raw_data_cols:  list of field names inside `raw_data` JSON column to monitor
+                          (extracted via JSONExtractString; missing keys yield '')
 
   Adds columns:
     _row_hash    — cityHash64 of tracked columns (for comparison)
@@ -18,8 +20,14 @@ WITH source_data AS (
         *,
         cityHash64(
             {% for col in check_cols %}
-            ifNull(toString({{ col }}), '__null__'){{ ',' if not loop.last }}
+            ifNull(toString({{ col }}), '__null__'),
             {% endfor %}
+            {% for col in check_raw_data_cols %}
+            JSONExtractString(ifNull(toString(raw_data), '{}'), '{{ col }}'){{ ',' if not loop.last }}
+            {% endfor %}
+            {% if not check_raw_data_cols %}
+            ''
+            {% endif %}
         ) AS _row_hash
     FROM {{ source_ref }}
 )

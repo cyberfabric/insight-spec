@@ -1,16 +1,23 @@
-{% macro fields_history(snapshot_ref, entity_id_col, fields) %}
+{% macro fields_history(snapshot_ref, entity_id_col, fields, fields_raw_data=[]) %}
 {#
   Generates a field-level change log from a snapshot model.
   One row per changed field per version transition.
 
   Args:
-    snapshot_ref:   ref() to the snapshot incremental model
-    entity_id_col:  column name for the entity identifier
-    fields:         list of column names to track
+    snapshot_ref:    ref() to the snapshot incremental model
+    entity_id_col:   column name for the entity identifier
+    fields:          list of top-level column names to track
+    fields_raw_data: list of field names inside `raw_data` JSON column to track
+                     (extracted via JSONExtractString; missing keys yield '')
 
   Output columns:
     entity_id, tenant_id, source_id, field_name, old_value, new_value, updated_at
+
+  Note: field_name values from both lists appear without prefixes — consumers
+  do not distinguish between top-level and raw_data fields.
 #}
+
+{% set all_fields = fields + fields_raw_data %}
 
 WITH versioned AS (
     SELECT
@@ -20,6 +27,9 @@ WITH versioned AS (
         source_id,
         {% for f in fields %}
         toString({{ f }}) AS {{ f }},
+        {% endfor %}
+        {% for f in fields_raw_data %}
+        JSONExtractString(ifNull(toString(raw_data), '{}'), '{{ f }}') AS {{ f }},
         {% endfor %}
         _tracked_at AS updated_at,
         ROW_NUMBER() OVER (
@@ -34,7 +44,7 @@ consecutive AS (
         curr.tenant_id,
         curr.source_id,
         curr.updated_at,
-        {% for f in fields %}
+        {% for f in all_fields %}
         curr.{{ f }} AS curr_{{ f }},
         prev.{{ f }} AS prev_{{ f }}{{ ',' if not loop.last }}
         {% endfor %}
@@ -44,7 +54,7 @@ consecutive AS (
         AND curr.version_num = prev.version_num + 1
 )
 
-{% for f in fields %}
+{% for f in all_fields %}
 SELECT
     entity_id, tenant_id, source_id,
     '{{ f }}' AS field_name,

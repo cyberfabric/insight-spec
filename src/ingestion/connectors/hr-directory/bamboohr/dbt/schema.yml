@@ -17,6 +17,18 @@ models:
       SCD Type 2 fields (valid_from/valid_to) are set as current-state snapshot
       (valid_from = lastChanged, valid_to = NULL).
     columns:
+      - name: tenant_id
+        description: "Tenant isolation identifier"
+        tests:
+          - not_null
+      - name: source_id
+        description: "Connector instance identifier"
+        tests:
+          - not_null
+      - name: unique_key
+        description: "Composite dedup key"
+        tests:
+          - not_null
       - name: source_person_id
         description: "BambooHR employee ID"
         tests:
@@ -44,5 +56,48 @@ models:
                 values: ['bamboohr']
       - name: workspace_id
         description: "Tenant identifier"
+        tests:
+          - not_null
+
+  - name: bamboohr__employees_snapshot
+    description: >
+      SCD2 append-only snapshot of BambooHR employees.
+      Tracks changes in standard fields and custom fields from raw_data.
+      Custom fields list is passed via dbt var bamboohr_custom_fields.
+    columns:
+      - name: unique_key
+        tests:
+          - not_null
+      - name: _row_hash
+        description: "cityHash64 of tracked columns for change detection"
+      - name: _tracked_at
+        description: "Timestamp when this version was captured"
+
+  - name: bamboohr__employees_fields_history
+    description: >
+      Field-level change log for BambooHR employees.
+      One row per changed field per version transition.
+      Includes both standard and custom fields (from raw_data).
+    columns:
+      - name: entity_id
+        description: "BambooHR employee ID"
+        tests:
+          - not_null
+      - name: tenant_id
+        tests:
+          - not_null
+      - name: source_id
+        tests:
+          - not_null
+      - name: field_name
+        description: "Name of the changed field"
+        tests:
+          - not_null
+      - name: old_value
+        description: "Previous value (as string)"
+      - name: new_value
+        description: "New value (as string)"
+      - name: updated_at
+        description: "Timestamp of the change"
         tests:
           - not_null

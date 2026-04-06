@@ -1,21 +1,7 @@
-# Connector package descriptor
 name: bamboohr
-version: "1.0"
-type: nocode
-
-# Silver layer targets this connector populates
-silver_targets:
-  - class_people
-
-# Stream definitions mapping to Bronze tables
-streams:
-  - name: employees
-    bronze_table: employees
-    primary_key: [id]
-    cursor_field: lastChanged
-  - name: leave_requests
-    bronze_table: leave_requests
-    primary_key: [id]
-  - name: meta_fields
-    bronze_table: meta_fields
-    primary_key: [unique]
+version: '1.0'
+schedule: 0 4 * * *
+dbt_select: tag:bamboohr+
+workflow: sync
+connection:
+  namespace: bronze_bamboohr

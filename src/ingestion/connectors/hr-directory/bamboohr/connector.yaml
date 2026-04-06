@@ -1,444 +1,2033 @@
-# BambooHR Connector — Airbyte Declarative Manifest
-# Extracts: employees (custom report), leave requests, field metadata
-# Auth: API Key via Authorization header
-# Sync: full refresh (no incremental — BambooHR is current-state only)
+version: 6.44.0
 
-version: "6.44.0"
+type: DeclarativeSource
+
+check:
+  type: CheckStream
+  stream_names:
+    - meta_fields
 
 definitions:
-  # --- Shared components ---
+  linked:
+    HttpRequester:
+      url_base: https://{{ config['bamboohr_domain'] }}.bamboohr.com/api/v1/
+      authenticator:
+        type: BasicHttpAuthenticator
+        password: x
+        username: "{{ config['bamboohr_api_key'] }}"
+      request_headers:
+        Accept: application/json
+    SimpleRetriever:
+      paginator:
+        type: NoPagination
 
-  base_requester:
-    type: HttpRequester
-    url_base: "https://{{ config['domain'] }}.bamboohr.com/api/v1/"
-    http_method: GET
-    authenticator:
-      type: BasicHttpAuthenticator
-      username: "{{ config['api_key'] }}"
-      password: "x"
-    request_headers:
-      Accept: "application/json"
-    error_handler:
-      type: CompositeErrorHandler
-      error_handlers:
-        - type: DefaultErrorHandler
-          response_filters:
-            - type: HttpResponseFilter
-              http_codes: [429]
-              action: RATE_LIMITED
-          backoff_strategies:
-            - type: WaitTimeFromHeader
-              header: "Retry-After"
-            - type: ExponentialBackoffStrategy
-              factor: 5
-        - type: DefaultErrorHandler
-          response_filters:
-            - type: HttpResponseFilter
-              http_codes: [503]
-              action: RATE_LIMITED
-          backoff_strategies:
-            - type: WaitTimeFromHeader
-              header: "Retry-After"
-            - type: ExponentialBackoffStrategy
-              factor: 5
-        - type: DefaultErrorHandler
-          response_filters:
-            - type: HttpResponseFilter
-              http_codes: [500, 502, 504]
-              action: RETRY
-          backoff_strategies:
-            - type: ExponentialBackoffStrategy
-              factor: 5
-          max_retries: 5
-
-  # --- Stream definitions ---
-
-  employees_stream:
-    type: DeclarativeStream
-    name: "employees"
-    primary_key: "id"
+streams:
+  - type: DeclarativeStream
+    name: employees
     retriever:
       type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
       requester:
-        $ref: "#/definitions/base_requester"
-        path: "reports/custom"
+        type: HttpRequester
+        path: reports/custom
+        url_base:
+          $ref: "#/definitions/linked/HttpRequester/url_base"
         http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          $ref: "#/definitions/linked/HttpRequester/request_headers"
         request_body_json:
-          title: "Insight Employee Sync"
+          title: Insight Employee Sync
           fields: >-
             {{ ['id', 'displayName', 'firstName', 'lastName', 'workEmail',
             'employeeNumber', 'jobTitle', 'department', 'division', 'status',
             'employmentHistoryStatus', 'supervisor', 'supervisorEId',
             'supervisorEmail', 'location', 'country', 'city', 'hireDate',
             'originalHireDate', 'terminationDate', 'lastChanged',
-            'standardHoursPerWeek'] + config.get('employees_custom_fields', []) }}
+            'standardHoursPerWeek'] +
+            config.get('bamboohr_employees_custom_fields', []) }}
       record_selector:
         type: RecordSelector
         extractor:
           type: DpathExtractor
           field_path:
             - employees
-      paginator:
-        type: NoPagination
-    transformations:
-      - type: AddFields
-        fields:
-          - path: [raw_data]
-            value: "{{ record }}"
-          - path: [tenant_id]
-            value: "{{ config['tenant_id'] }}"
-          - path: [source_instance_id]
-            value: "{{ config['source_instance_id'] }}"
-          - path: [_source]
-            value: "bamboohr"
-          - path: [_extracted_at]
-            value: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+    primary_key: unique_key
     schema_loader:
       type: InlineSchemaLoader
       schema:
-        $schema: "http://json-schema.org/draft-07/schema#"
         type: object
-        additionalProperties: true
+        $schema: http://json-schema.org/schema#
+        required:
+          - unique_key
         properties:
-          tenant_id:
-            type: string
-          source_instance_id:
-            type: string
-          raw_data:
-            type: object
-            additionalProperties: true
           id:
-            type: string
-          displayName:
             type:
-              - "null"
               - string
-          firstName:
-            type:
               - "null"
-              - string
-          lastName:
-            type:
-              - "null"
-              - string
-          workEmail:
-            type:
-              - "null"
-              - string
-          employeeNumber:
-            type:
-              - "null"
-              - string
-          jobTitle:
-            type:
-              - "null"
-              - string
-          department:
-            type:
-              - "null"
-              - string
-          division:
-            type:
-              - "null"
-              - string
-          status:
-            type:
-              - "null"
-              - string
-          employmentHistoryStatus:
-            type:
-              - "null"
-              - string
-          supervisor:
-            type:
-              - "null"
-              - string
-          supervisorEId:
-            type:
-              - "null"
-              - string
-          supervisorEmail:
-            type:
-              - "null"
-              - string
-          location:
-            type:
-              - "null"
-              - string
-          country:
-            type:
-              - "null"
-              - string
           city:
             type:
-              - "null"
               - string
-          hireDate:
-            type:
               - "null"
-              - string
-          originalHireDate:
-            type:
-              - "null"
-              - string
-          terminationDate:
-            type:
-              - "null"
-              - string
-          lastChanged:
-            type:
-              - "null"
-              - string
-            format: date-time
-          standardHoursPerWeek:
-            type:
-              - "null"
-              - string
-
-  leave_requests_stream:
-    type: DeclarativeStream
-    name: "leave_requests"
-    primary_key: "id"
-    retriever:
-      type: SimpleRetriever
-      requester:
-        $ref: "#/definitions/base_requester"
-        path: "time_off/requests"
-        request_parameters:
-          start: "2020-01-01"
-          end: "{{ now_utc().strftime('%Y-%m-%d') }}"
-      record_selector:
-        type: RecordSelector
-        extractor:
-          type: DpathExtractor
-          field_path: []
-      paginator:
-        type: NoPagination
-    transformations:
-      - type: AddFields
-        fields:
-          - path: [tenant_id]
-            value: "{{ config['tenant_id'] }}"
-          - path: [source_instance_id]
-            value: "{{ config['source_instance_id'] }}"
-          - path: [_source]
-            value: "bamboohr"
-          - path: [_extracted_at]
-            value: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
-    schema_loader:
-      type: InlineSchemaLoader
-      schema:
-        $schema: "http://json-schema.org/draft-07/schema#"
-        type: object
-        additionalProperties: true
-        properties:
-          tenant_id:
-            type: string
-          source_instance_id:
-            type: string
-          id:
-            type: string
-          employeeId:
-            type:
-              - "null"
-              - string
-          name:
-            type:
-              - "null"
-              - string
           status:
             type:
+              - string
               - "null"
+          country:
+            type:
+              - string
+              - "null"
+          division:
+            type:
+              - string
+              - "null"
+          hireDate:
+            type:
+              - string
+              - "null"
+          jobTitle:
+            type:
+              - string
+              - "null"
+          lastName:
+            type:
+              - string
+              - "null"
+          location:
+            type:
+              - string
+              - "null"
+          raw_data:
+            type:
               - object
-            properties:
-              lastChanged:
-                type:
-                  - "null"
-                  - string
-              lastChangedByUserId:
-                type:
-                  - "null"
-                  - string
-              status:
-                type:
-                  - "null"
-                  - string
-          start:
-            type:
               - "null"
-              - string
-            format: date
-          end:
-            type:
-              - "null"
-              - string
-            format: date
-          created:
-            type:
-              - "null"
-              - string
-            format: date
-          type:
-            type:
-              - "null"
-              - object
             properties:
               id:
                 type:
-                  - "null"
                   - string
-              name:
+                  - "null"
+              city:
                 type:
-                  - "null"
                   - string
-              icon:
+                  - "null"
+              status:
                 type:
-                  - "null"
                   - string
-          amount:
+                  - "null"
+              country:
+                type:
+                  - string
+                  - "null"
+              division:
+                type:
+                  - string
+                  - "null"
+              hireDate:
+                type:
+                  - string
+                  - "null"
+              jobTitle:
+                type:
+                  - string
+                  - "null"
+              lastName:
+                type:
+                  - string
+                  - "null"
+              location:
+                type:
+                  - string
+                  - "null"
+              firstName:
+                type:
+                  - string
+                  - "null"
+              workEmail:
+                type:
+                  - string
+                  - "null"
+              department:
+                type:
+                  - string
+                  - "null"
+              supervisor:
+                type:
+                  - string
+                  - "null"
+              displayName:
+                type:
+                  - string
+                  - "null"
+              lastChanged:
+                type:
+                  - string
+                  - "null"
+              supervisorEId:
+                type:
+                  - string
+                  - "null"
+              employeeNumber:
+                type:
+                  - string
+                  - "null"
+              supervisorEmail:
+                type:
+                  - string
+                  - "null"
+              terminationDate:
+                type:
+                  - string
+                  - "null"
+              originalHireDate:
+                type:
+                  - string
+                  - "null"
+              employmentHistoryStatus:
+                type:
+                  - string
+                  - "null"
+          firstName:
             type:
+              - string
               - "null"
-              - object
-            properties:
-              unit:
-                type:
-                  - "null"
-                  - string
-              amount:
-                type:
-                  - "null"
-                  - string
-          dates:
+          source_id:
             type:
+              - string
               - "null"
-              - object
-            additionalProperties: true
-          notes:
+          tenant_id:
             type:
+              - string
               - "null"
-              - object
-            additionalProperties: true
-
-  meta_fields_stream:
-    type: DeclarativeStream
-    name: "meta_fields"
-    primary_key: "unique"
+          workEmail:
+            type:
+              - string
+              - "null"
+          department:
+            type:
+              - string
+              - "null"
+          supervisor:
+            type:
+              - string
+              - "null"
+          unique_key:
+            type: string
+          displayName:
+            type:
+              - string
+              - "null"
+          lastChanged:
+            type:
+              - string
+              - "null"
+          supervisorEId:
+            type:
+              - string
+              - "null"
+          employeeNumber:
+            type:
+              - string
+              - "null"
+          supervisorEmail:
+            type:
+              - string
+              - "null"
+          terminationDate:
+            type:
+              - string
+              - "null"
+          originalHireDate:
+            type:
+              - string
+              - "null"
+          employmentHistoryStatus:
+            type:
+              - string
+              - "null"
+        additionalProperties: true
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - raw_data
+            value: "{{ record }}"
+          - type: AddedFieldDefinition
+            path:
+              - tenant_id
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - unique_key
+            value: >-
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
+              }}-{{ record['id'] }}
+  - type: DeclarativeStream
+    name: leave_requests
     retriever:
       type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
       requester:
-        $ref: "#/definitions/base_requester"
-        path: "meta/fields"
+        type: HttpRequester
+        path: time_off/requests
+        url_base:
+          $ref: "#/definitions/linked/HttpRequester/url_base"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
         request_headers:
-          Accept: "application/json"
+          $ref: "#/definitions/linked/HttpRequester/request_headers"
+        request_parameters:
+          end: "{{ now_utc().strftime('%Y-%m-%d') }}"
+          start: "2020-01-01"
       record_selector:
         type: RecordSelector
         extractor:
           type: DpathExtractor
           field_path: []
-      paginator:
-        type: NoPagination
-    transformations:
-      - type: AddFields
-        fields:
-          - path: ["unique"]
-            value: "{{ 'd' ~ record['id'] if record.get('deprecated', false) else record['id'] | string }}"
-          - path: [tenant_id]
-            value: "{{ config['tenant_id'] }}"
-          - path: [source_instance_id]
-            value: "{{ config['source_instance_id'] }}"
-          - path: [_source]
-            value: "bamboohr"
-          - path: [_extracted_at]
-            value: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+    primary_key: unique_key
     schema_loader:
       type: InlineSchemaLoader
       schema:
-        $schema: "http://json-schema.org/draft-07/schema#"
         type: object
-        additionalProperties: true
+        $schema: http://json-schema.org/schema#
+        required:
+          - unique_key
         properties:
+          type:
+            type:
+              - object
+              - "null"
+            properties:
+              id:
+                type:
+                  - string
+                  - "null"
+              icon:
+                type:
+                  - string
+                  - "null"
+              name:
+                type:
+                  - string
+                  - "null"
+          id:
+            type:
+              - string
+              - "null"
+          end:
+            type:
+              - string
+              - "null"
+          name:
+            type:
+              - string
+              - "null"
+          dates:
+            type:
+              - object
+              - "null"
+            properties:
+              "2022-07-04":
+                type:
+                  - string
+                  - "null"
+              "2022-07-05":
+                type:
+                  - string
+                  - "null"
+              "2022-07-06":
+                type:
+                  - string
+                  - "null"
+              "2022-07-07":
+                type:
+                  - string
+                  - "null"
+              "2022-07-08":
+                type:
+                  - string
+                  - "null"
+              "2022-07-09":
+                type:
+                  - string
+                  - "null"
+              "2022-07-10":
+                type:
+                  - string
+                  - "null"
+              "2022-07-11":
+                type:
+                  - string
+                  - "null"
+              "2022-07-12":
+                type:
+                  - string
+                  - "null"
+              "2022-07-13":
+                type:
+                  - string
+                  - "null"
+              "2022-07-14":
+                type:
+                  - string
+                  - "null"
+              "2022-07-15":
+                type:
+                  - string
+                  - "null"
+              "2022-09-05":
+                type:
+                  - string
+                  - "null"
+              "2022-09-23":
+                type:
+                  - string
+                  - "null"
+              "2022-09-24":
+                type:
+                  - string
+                  - "null"
+              "2022-10-31":
+                type:
+                  - string
+                  - "null"
+              "2022-11-01":
+                type:
+                  - string
+                  - "null"
+              "2022-11-24":
+                type:
+                  - string
+                  - "null"
+              "2023-01-23":
+                type:
+                  - string
+                  - "null"
+              "2023-01-24":
+                type:
+                  - string
+                  - "null"
+              "2023-01-25":
+                type:
+                  - string
+                  - "null"
+              "2023-01-26":
+                type:
+                  - string
+                  - "null"
+              "2023-01-27":
+                type:
+                  - string
+                  - "null"
+              "2023-02-06":
+                type:
+                  - string
+                  - "null"
+              "2023-02-07":
+                type:
+                  - string
+                  - "null"
+              "2023-02-08":
+                type:
+                  - string
+                  - "null"
+              "2023-02-09":
+                type:
+                  - string
+                  - "null"
+              "2023-02-10":
+                type:
+                  - string
+                  - "null"
+              "2023-03-10":
+                type:
+                  - string
+                  - "null"
+              "2023-03-20":
+                type:
+                  - string
+                  - "null"
+              "2023-03-21":
+                type:
+                  - string
+                  - "null"
+              "2023-03-24":
+                type:
+                  - string
+                  - "null"
+              "2023-04-04":
+                type:
+                  - string
+                  - "null"
+              "2023-04-05":
+                type:
+                  - string
+                  - "null"
+              "2023-04-06":
+                type:
+                  - string
+                  - "null"
+              "2023-04-07":
+                type:
+                  - string
+                  - "null"
+              "2023-04-08":
+                type:
+                  - string
+                  - "null"
+              "2023-04-09":
+                type:
+                  - string
+                  - "null"
+              "2023-04-10":
+                type:
+                  - string
+                  - "null"
+              "2023-04-11":
+                type:
+                  - string
+                  - "null"
+              "2023-04-12":
+                type:
+                  - string
+                  - "null"
+              "2023-04-13":
+                type:
+                  - string
+                  - "null"
+              "2023-04-14":
+                type:
+                  - string
+                  - "null"
+              "2023-04-15":
+                type:
+                  - string
+                  - "null"
+              "2023-04-16":
+                type:
+                  - string
+                  - "null"
+              "2023-04-17":
+                type:
+                  - string
+                  - "null"
+              "2023-04-18":
+                type:
+                  - string
+                  - "null"
+              "2023-04-19":
+                type:
+                  - string
+                  - "null"
+              "2023-04-20":
+                type:
+                  - string
+                  - "null"
+              "2023-04-21":
+                type:
+                  - string
+                  - "null"
+              "2023-04-25":
+                type:
+                  - string
+                  - "null"
+              "2023-05-01":
+                type:
+                  - string
+                  - "null"
+              "2023-05-05":
+                type:
+                  - string
+                  - "null"
+              "2023-05-15":
+                type:
+                  - string
+                  - "null"
+              "2023-05-16":
+                type:
+                  - string
+                  - "null"
+              "2023-05-17":
+                type:
+                  - string
+                  - "null"
+              "2023-05-18":
+                type:
+                  - string
+                  - "null"
+              "2023-05-19":
+                type:
+                  - string
+                  - "null"
+              "2023-05-20":
+                type:
+                  - string
+                  - "null"
+              "2023-05-21":
+                type:
+                  - string
+                  - "null"
+              "2023-05-22":
+                type:
+                  - string
+                  - "null"
+              "2023-05-23":
+                type:
+                  - string
+                  - "null"
+              "2023-05-24":
+                type:
+                  - string
+                  - "null"
+              "2023-05-25":
+                type:
+                  - string
+                  - "null"
+              "2023-05-26":
+                type:
+                  - string
+                  - "null"
+              "2023-05-27":
+                type:
+                  - string
+                  - "null"
+              "2023-05-28":
+                type:
+                  - string
+                  - "null"
+              "2023-05-29":
+                type:
+                  - string
+                  - "null"
+              "2023-05-30":
+                type:
+                  - string
+                  - "null"
+              "2023-05-31":
+                type:
+                  - string
+                  - "null"
+              "2023-06-01":
+                type:
+                  - string
+                  - "null"
+              "2023-06-02":
+                type:
+                  - string
+                  - "null"
+              "2023-06-19":
+                type:
+                  - string
+                  - "null"
+              "2023-06-20":
+                type:
+                  - string
+                  - "null"
+              "2023-06-21":
+                type:
+                  - string
+                  - "null"
+              "2023-06-22":
+                type:
+                  - string
+                  - "null"
+              "2023-06-23":
+                type:
+                  - string
+                  - "null"
+              "2023-06-29":
+                type:
+                  - string
+                  - "null"
+              "2023-06-30":
+                type:
+                  - string
+                  - "null"
+              "2023-07-01":
+                type:
+                  - string
+                  - "null"
+              "2023-07-03":
+                type:
+                  - string
+                  - "null"
+              "2023-07-04":
+                type:
+                  - string
+                  - "null"
+              "2023-07-05":
+                type:
+                  - string
+                  - "null"
+              "2023-07-06":
+                type:
+                  - string
+                  - "null"
+              "2023-07-07":
+                type:
+                  - string
+                  - "null"
+              "2023-07-08":
+                type:
+                  - string
+                  - "null"
+              "2023-07-12":
+                type:
+                  - string
+                  - "null"
+              "2023-07-13":
+                type:
+                  - string
+                  - "null"
+              "2023-07-14":
+                type:
+                  - string
+                  - "null"
+              "2023-07-20":
+                type:
+                  - string
+                  - "null"
+              "2023-07-21":
+                type:
+                  - string
+                  - "null"
+              "2023-07-22":
+                type:
+                  - string
+                  - "null"
+              "2023-08-07":
+                type:
+                  - string
+                  - "null"
+              "2023-08-08":
+                type:
+                  - string
+                  - "null"
+              "2023-08-09":
+                type:
+                  - string
+                  - "null"
+              "2023-08-10":
+                type:
+                  - string
+                  - "null"
+              "2023-08-11":
+                type:
+                  - string
+                  - "null"
+              "2023-08-14":
+                type:
+                  - string
+                  - "null"
+              "2023-08-15":
+                type:
+                  - string
+                  - "null"
+              "2023-08-16":
+                type:
+                  - string
+                  - "null"
+              "2023-08-17":
+                type:
+                  - string
+                  - "null"
+              "2023-08-18":
+                type:
+                  - string
+                  - "null"
+              "2023-08-19":
+                type:
+                  - string
+                  - "null"
+              "2023-08-20":
+                type:
+                  - string
+                  - "null"
+              "2023-08-21":
+                type:
+                  - string
+                  - "null"
+              "2023-08-22":
+                type:
+                  - string
+                  - "null"
+              "2023-08-23":
+                type:
+                  - string
+                  - "null"
+              "2023-08-24":
+                type:
+                  - string
+                  - "null"
+              "2023-08-25":
+                type:
+                  - string
+                  - "null"
+              "2023-08-26":
+                type:
+                  - string
+                  - "null"
+              "2023-08-27":
+                type:
+                  - string
+                  - "null"
+              "2023-08-28":
+                type:
+                  - string
+                  - "null"
+              "2023-08-29":
+                type:
+                  - string
+                  - "null"
+              "2023-08-30":
+                type:
+                  - string
+                  - "null"
+              "2023-08-31":
+                type:
+                  - string
+                  - "null"
+              "2023-09-06":
+                type:
+                  - string
+                  - "null"
+              "2023-09-11":
+                type:
+                  - string
+                  - "null"
+              "2023-09-12":
+                type:
+                  - string
+                  - "null"
+              "2023-09-13":
+                type:
+                  - string
+                  - "null"
+              "2023-09-14":
+                type:
+                  - string
+                  - "null"
+              "2023-09-15":
+                type:
+                  - string
+                  - "null"
+              "2023-09-16":
+                type:
+                  - string
+                  - "null"
+              "2023-09-17":
+                type:
+                  - string
+                  - "null"
+              "2023-09-18":
+                type:
+                  - string
+                  - "null"
+              "2023-09-19":
+                type:
+                  - string
+                  - "null"
+              "2023-09-20":
+                type:
+                  - string
+                  - "null"
+              "2023-09-21":
+                type:
+                  - string
+                  - "null"
+              "2023-09-22":
+                type:
+                  - string
+                  - "null"
+              "2023-09-23":
+                type:
+                  - string
+                  - "null"
+              "2023-09-24":
+                type:
+                  - string
+                  - "null"
+              "2023-09-25":
+                type:
+                  - string
+                  - "null"
+              "2023-09-26":
+                type:
+                  - string
+                  - "null"
+              "2023-09-27":
+                type:
+                  - string
+                  - "null"
+              "2023-09-28":
+                type:
+                  - string
+                  - "null"
+              "2023-09-29":
+                type:
+                  - string
+                  - "null"
+              "2023-10-04":
+                type:
+                  - string
+                  - "null"
+              "2023-10-05":
+                type:
+                  - string
+                  - "null"
+              "2023-10-06":
+                type:
+                  - string
+                  - "null"
+              "2023-10-09":
+                type:
+                  - string
+                  - "null"
+              "2023-10-10":
+                type:
+                  - string
+                  - "null"
+              "2023-10-11":
+                type:
+                  - string
+                  - "null"
+              "2023-10-12":
+                type:
+                  - string
+                  - "null"
+              "2023-10-13":
+                type:
+                  - string
+                  - "null"
+              "2023-10-16":
+                type:
+                  - string
+                  - "null"
+              "2023-10-17":
+                type:
+                  - string
+                  - "null"
+              "2023-10-18":
+                type:
+                  - string
+                  - "null"
+              "2023-10-19":
+                type:
+                  - string
+                  - "null"
+              "2023-10-20":
+                type:
+                  - string
+                  - "null"
+              "2023-10-21":
+                type:
+                  - string
+                  - "null"
+              "2023-10-22":
+                type:
+                  - string
+                  - "null"
+              "2023-10-23":
+                type:
+                  - string
+                  - "null"
+              "2023-10-24":
+                type:
+                  - string
+                  - "null"
+              "2023-10-25":
+                type:
+                  - string
+                  - "null"
+              "2023-10-26":
+                type:
+                  - string
+                  - "null"
+              "2023-10-27":
+                type:
+                  - string
+                  - "null"
+              "2023-10-28":
+                type:
+                  - string
+                  - "null"
+              "2023-10-29":
+                type:
+                  - string
+                  - "null"
+              "2023-12-08":
+                type:
+                  - string
+                  - "null"
+              "2023-12-18":
+                type:
+                  - string
+                  - "null"
+              "2023-12-19":
+                type:
+                  - string
+                  - "null"
+              "2023-12-20":
+                type:
+                  - string
+                  - "null"
+              "2023-12-21":
+                type:
+                  - string
+                  - "null"
+              "2023-12-22":
+                type:
+                  - string
+                  - "null"
+              "2023-12-23":
+                type:
+                  - string
+                  - "null"
+              "2023-12-24":
+                type:
+                  - string
+                  - "null"
+              "2023-12-25":
+                type:
+                  - string
+                  - "null"
+              "2023-12-26":
+                type:
+                  - string
+                  - "null"
+              "2023-12-27":
+                type:
+                  - string
+                  - "null"
+              "2023-12-28":
+                type:
+                  - string
+                  - "null"
+              "2023-12-29":
+                type:
+                  - string
+                  - "null"
+              "2023-12-30":
+                type:
+                  - string
+                  - "null"
+              "2023-12-31":
+                type:
+                  - string
+                  - "null"
+              "2024-01-01":
+                type:
+                  - string
+                  - "null"
+              "2024-01-02":
+                type:
+                  - string
+                  - "null"
+              "2024-01-03":
+                type:
+                  - string
+                  - "null"
+              "2024-01-04":
+                type:
+                  - string
+                  - "null"
+              "2024-01-05":
+                type:
+                  - string
+                  - "null"
+              "2024-01-06":
+                type:
+                  - string
+                  - "null"
+              "2024-01-07":
+                type:
+                  - string
+                  - "null"
+              "2024-01-08":
+                type:
+                  - string
+                  - "null"
+              "2024-01-09":
+                type:
+                  - string
+                  - "null"
+              "2024-01-10":
+                type:
+                  - string
+                  - "null"
+              "2024-01-11":
+                type:
+                  - string
+                  - "null"
+              "2024-01-12":
+                type:
+                  - string
+                  - "null"
+              "2024-01-13":
+                type:
+                  - string
+                  - "null"
+              "2024-01-14":
+                type:
+                  - string
+                  - "null"
+              "2024-01-15":
+                type:
+                  - string
+                  - "null"
+              "2024-01-16":
+                type:
+                  - string
+                  - "null"
+              "2024-01-17":
+                type:
+                  - string
+                  - "null"
+              "2024-01-18":
+                type:
+                  - string
+                  - "null"
+              "2024-01-19":
+                type:
+                  - string
+                  - "null"
+              "2024-01-20":
+                type:
+                  - string
+                  - "null"
+              "2024-01-21":
+                type:
+                  - string
+                  - "null"
+              "2024-01-22":
+                type:
+                  - string
+                  - "null"
+              "2024-01-23":
+                type:
+                  - string
+                  - "null"
+              "2024-01-24":
+                type:
+                  - string
+                  - "null"
+              "2024-01-25":
+                type:
+                  - string
+                  - "null"
+              "2024-01-26":
+                type:
+                  - string
+                  - "null"
+              "2024-01-27":
+                type:
+                  - string
+                  - "null"
+              "2024-01-28":
+                type:
+                  - string
+                  - "null"
+              "2024-01-29":
+                type:
+                  - string
+                  - "null"
+              "2024-01-30":
+                type:
+                  - string
+                  - "null"
+              "2024-01-31":
+                type:
+                  - string
+                  - "null"
+              "2024-02-02":
+                type:
+                  - string
+                  - "null"
+              "2024-02-12":
+                type:
+                  - string
+                  - "null"
+              "2024-02-13":
+                type:
+                  - string
+                  - "null"
+              "2024-02-14":
+                type:
+                  - string
+                  - "null"
+              "2024-02-15":
+                type:
+                  - string
+                  - "null"
+              "2024-02-16":
+                type:
+                  - string
+                  - "null"
+              "2024-03-11":
+                type:
+                  - string
+                  - "null"
+              "2024-03-12":
+                type:
+                  - string
+                  - "null"
+              "2024-03-13":
+                type:
+                  - string
+                  - "null"
+              "2024-03-14":
+                type:
+                  - string
+                  - "null"
+              "2024-03-15":
+                type:
+                  - string
+                  - "null"
+              "2024-03-16":
+                type:
+                  - string
+                  - "null"
+              "2024-03-17":
+                type:
+                  - string
+                  - "null"
+              "2024-03-18":
+                type:
+                  - string
+                  - "null"
+              "2024-03-19":
+                type:
+                  - string
+                  - "null"
+              "2024-03-20":
+                type:
+                  - string
+                  - "null"
+              "2024-03-21":
+                type:
+                  - string
+                  - "null"
+              "2024-03-22":
+                type:
+                  - string
+                  - "null"
+              "2024-04-07":
+                type:
+                  - string
+                  - "null"
+              "2024-04-08":
+                type:
+                  - string
+                  - "null"
+              "2024-04-09":
+                type:
+                  - string
+                  - "null"
+              "2024-04-10":
+                type:
+                  - string
+                  - "null"
+              "2024-04-11":
+                type:
+                  - string
+                  - "null"
+              "2024-04-12":
+                type:
+                  - string
+                  - "null"
+              "2024-04-22":
+                type:
+                  - string
+                  - "null"
+              "2024-05-02":
+                type:
+                  - string
+                  - "null"
+              "2024-05-16":
+                type:
+                  - string
+                  - "null"
+              "2024-05-17":
+                type:
+                  - string
+                  - "null"
+              "2024-05-20":
+                type:
+                  - string
+                  - "null"
+              "2024-05-21":
+                type:
+                  - string
+                  - "null"
+              "2024-05-22":
+                type:
+                  - string
+                  - "null"
+              "2024-05-23":
+                type:
+                  - string
+                  - "null"
+              "2024-05-24":
+                type:
+                  - string
+                  - "null"
+              "2024-05-27":
+                type:
+                  - string
+                  - "null"
+              "2024-05-28":
+                type:
+                  - string
+                  - "null"
+              "2024-06-06":
+                type:
+                  - string
+                  - "null"
+              "2024-06-07":
+                type:
+                  - string
+                  - "null"
+              "2024-06-10":
+                type:
+                  - string
+                  - "null"
+              "2024-06-11":
+                type:
+                  - string
+                  - "null"
+              "2024-06-12":
+                type:
+                  - string
+                  - "null"
+              "2024-06-13":
+                type:
+                  - string
+                  - "null"
+              "2024-06-14":
+                type:
+                  - string
+                  - "null"
+              "2024-06-17":
+                type:
+                  - string
+                  - "null"
+              "2024-06-18":
+                type:
+                  - string
+                  - "null"
+              "2024-06-19":
+                type:
+                  - string
+                  - "null"
+              "2024-06-20":
+                type:
+                  - string
+                  - "null"
+              "2024-06-21":
+                type:
+                  - string
+                  - "null"
+              "2024-07-11":
+                type:
+                  - string
+                  - "null"
+              "2024-07-12":
+                type:
+                  - string
+                  - "null"
+              "2024-07-15":
+                type:
+                  - string
+                  - "null"
+              "2024-07-16":
+                type:
+                  - string
+                  - "null"
+              "2024-07-17":
+                type:
+                  - string
+                  - "null"
+              "2024-07-18":
+                type:
+                  - string
+                  - "null"
+              "2024-07-19":
+                type:
+                  - string
+                  - "null"
+              "2024-07-20":
+                type:
+                  - string
+                  - "null"
+              "2024-07-21":
+                type:
+                  - string
+                  - "null"
+              "2024-07-22":
+                type:
+                  - string
+                  - "null"
+              "2024-07-23":
+                type:
+                  - string
+                  - "null"
+              "2024-07-24":
+                type:
+                  - string
+                  - "null"
+              "2024-07-25":
+                type:
+                  - string
+                  - "null"
+              "2024-07-26":
+                type:
+                  - string
+                  - "null"
+              "2024-07-27":
+                type:
+                  - string
+                  - "null"
+              "2024-07-28":
+                type:
+                  - string
+                  - "null"
+              "2024-07-29":
+                type:
+                  - string
+                  - "null"
+              "2024-08-12":
+                type:
+                  - string
+                  - "null"
+              "2024-08-13":
+                type:
+                  - string
+                  - "null"
+              "2024-08-14":
+                type:
+                  - string
+                  - "null"
+              "2024-08-26":
+                type:
+                  - string
+                  - "null"
+              "2024-08-27":
+                type:
+                  - string
+                  - "null"
+              "2024-08-28":
+                type:
+                  - string
+                  - "null"
+              "2024-08-29":
+                type:
+                  - string
+                  - "null"
+              "2024-08-30":
+                type:
+                  - string
+                  - "null"
+              "2024-09-02":
+                type:
+                  - string
+                  - "null"
+              "2024-09-03":
+                type:
+                  - string
+                  - "null"
+              "2024-09-04":
+                type:
+                  - string
+                  - "null"
+              "2024-09-05":
+                type:
+                  - string
+                  - "null"
+              "2024-09-06":
+                type:
+                  - string
+                  - "null"
+              "2024-09-11":
+                type:
+                  - string
+                  - "null"
+              "2024-09-12":
+                type:
+                  - string
+                  - "null"
+              "2024-09-13":
+                type:
+                  - string
+                  - "null"
+              "2024-09-27":
+                type:
+                  - string
+                  - "null"
+              "2024-09-28":
+                type:
+                  - string
+                  - "null"
+              "2024-11-04":
+                type:
+                  - string
+                  - "null"
+              "2024-11-05":
+                type:
+                  - string
+                  - "null"
+              "2024-11-06":
+                type:
+                  - string
+                  - "null"
+              "2024-12-23":
+                type:
+                  - string
+                  - "null"
+              "2024-12-24":
+                type:
+                  - string
+                  - "null"
+              "2024-12-25":
+                type:
+                  - string
+                  - "null"
+              "2024-12-26":
+                type:
+                  - string
+                  - "null"
+              "2024-12-27":
+                type:
+                  - string
+                  - "null"
+              "2024-12-28":
+                type:
+                  - string
+                  - "null"
+              "2024-12-29":
+                type:
+                  - string
+                  - "null"
+              "2024-12-30":
+                type:
+                  - string
+                  - "null"
+              "2024-12-31":
+                type:
+                  - string
+                  - "null"
+              "2025-04-07":
+                type:
+                  - string
+                  - "null"
+              "2025-04-08":
+                type:
+                  - string
+                  - "null"
+              "2025-04-17":
+                type:
+                  - string
+                  - "null"
+              "2025-04-18":
+                type:
+                  - string
+                  - "null"
+              "2025-04-19":
+                type:
+                  - string
+                  - "null"
+              "2025-04-20":
+                type:
+                  - string
+                  - "null"
+              "2025-04-21":
+                type:
+                  - string
+                  - "null"
+              "2025-04-22":
+                type:
+                  - string
+                  - "null"
+              "2025-04-23":
+                type:
+                  - string
+                  - "null"
+              "2025-04-24":
+                type:
+                  - string
+                  - "null"
+              "2025-04-25":
+                type:
+                  - string
+                  - "null"
+              "2025-07-07":
+                type:
+                  - string
+                  - "null"
+              "2025-07-08":
+                type:
+                  - string
+                  - "null"
+              "2025-07-09":
+                type:
+                  - string
+                  - "null"
+              "2025-07-10":
+                type:
+                  - string
+                  - "null"
+              "2025-07-11":
+                type:
+                  - string
+                  - "null"
+              "2025-07-12":
+                type:
+                  - string
+                  - "null"
+              "2025-07-13":
+                type:
+                  - string
+                  - "null"
+              "2025-07-14":
+                type:
+                  - string
+                  - "null"
+              "2025-07-15":
+                type:
+                  - string
+                  - "null"
+              "2025-07-16":
+                type:
+                  - string
+                  - "null"
+              "2025-07-17":
+                type:
+                  - string
+                  - "null"
+              "2025-07-18":
+                type:
+                  - string
+                  - "null"
+              "2025-08-01":
+                type:
+                  - string
+                  - "null"
+              "2025-08-02":
+                type:
+                  - string
+                  - "null"
+              "2025-08-03":
+                type:
+                  - string
+                  - "null"
+              "2025-08-04":
+                type:
+                  - string
+                  - "null"
+              "2025-08-05":
+                type:
+                  - string
+                  - "null"
+              "2025-08-06":
+                type:
+                  - string
+                  - "null"
+              "2025-08-07":
+                type:
+                  - string
+                  - "null"
+              "2025-08-08":
+                type:
+                  - string
+                  - "null"
+              "2025-08-09":
+                type:
+                  - string
+                  - "null"
+              "2025-08-10":
+                type:
+                  - string
+                  - "null"
+              "2025-08-11":
+                type:
+                  - string
+                  - "null"
+              "2025-08-12":
+                type:
+                  - string
+                  - "null"
+              "2025-11-10":
+                type:
+                  - string
+                  - "null"
+              "2025-11-11":
+                type:
+                  - string
+                  - "null"
+              "2025-11-19":
+                type:
+                  - string
+                  - "null"
+              "2025-11-20":
+                type:
+                  - string
+                  - "null"
+              "2025-12-19":
+                type:
+                  - string
+                  - "null"
+              "2026-03-02":
+                type:
+                  - string
+                  - "null"
+              "2026-03-03":
+                type:
+                  - string
+                  - "null"
+              "2026-03-04":
+                type:
+                  - string
+                  - "null"
+              "2026-03-05":
+                type:
+                  - string
+                  - "null"
+              "2026-03-06":
+                type:
+                  - string
+                  - "null"
+              "2026-03-07":
+                type:
+                  - string
+                  - "null"
+              "2026-03-08":
+                type:
+                  - string
+                  - "null"
+              "2026-03-09":
+                type:
+                  - string
+                  - "null"
+              "2026-03-10":
+                type:
+                  - string
+                  - "null"
+              "2026-03-11":
+                type:
+                  - string
+                  - "null"
+              "2026-03-12":
+                type:
+                  - string
+                  - "null"
+              "2026-03-13":
+                type:
+                  - string
+                  - "null"
+              "2026-03-14":
+                type:
+                  - string
+                  - "null"
+              "2026-03-15":
+                type:
+                  - string
+                  - "null"
+          notes:
+            type:
+              - object
+              - "null"
+            properties:
+              manager:
+                type:
+                  - string
+                  - "null"
+              employee:
+                type:
+                  - string
+                  - "null"
+          start:
+            type:
+              - string
+              - "null"
+          amount:
+            type:
+              - object
+              - "null"
+            properties:
+              unit:
+                type:
+                  - string
+                  - "null"
+              amount:
+                type:
+                  - string
+                  - "null"
+          status:
+            type:
+              - object
+              - "null"
+            properties:
+              status:
+                type:
+                  - string
+                  - "null"
+              lastChanged:
+                type:
+                  - string
+                  - "null"
+              lastChangedByUserId:
+                type:
+                  - string
+                  - "null"
+          actions:
+            type:
+              - object
+              - "null"
+            properties:
+              deny:
+                type:
+                  - boolean
+                  - "null"
+              edit:
+                type:
+                  - boolean
+                  - "null"
+              view:
+                type:
+                  - boolean
+                  - "null"
+              bypass:
+                type:
+                  - boolean
+                  - "null"
+              cancel:
+                type:
+                  - boolean
+                  - "null"
+              approve:
+                type:
+                  - boolean
+                  - "null"
+          created:
+            type:
+              - string
+              - "null"
+          source_id:
+            type:
+              - string
+              - "null"
           tenant_id:
+            type:
+              - string
+              - "null"
+          employeeId:
+            type:
+              - string
+              - "null"
+          unique_key:
             type: string
-          source_instance_id:
-            type: string
+        additionalProperties: true
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - tenant_id
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - unique_key
+            value: >-
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
+              }}-{{ record['id'] }}
+  - type: DeclarativeStream
+    name: meta_fields
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        path: meta/fields
+        url_base:
+          $ref: "#/definitions/linked/HttpRequester/url_base"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          $ref: "#/definitions/linked/HttpRequester/request_headers"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+    primary_key: unique_key
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - unique_key
+        properties:
+          type:
+            type:
+              - string
+              - "null"
           id:
             type:
               - number
               - string
+              - "null"
           name:
-            type: string
-          type:
-            type: string
+            type:
+              - string
+              - "null"
           alias:
             type:
-              - "null"
               - string
+              - "null"
           unique:
             type:
               - number
               - string
+              - "null"
+          source_id:
+            type:
+              - string
+              - "null"
+          tenant_id:
+            type:
+              - string
+              - "null"
           deprecated:
             type:
-              - "null"
               - boolean
-
-streams:
-  - $ref: "#/definitions/employees_stream"
-  - $ref: "#/definitions/leave_requests_stream"
-  - $ref: "#/definitions/meta_fields_stream"
-
-check:
-  type: CheckStream
-  stream_names:
-    - "meta_fields"
+              - "null"
+          unique_key:
+            type: string
+        additionalProperties: true
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - unique
+            value: >-
+              {{ 'd' ~ record['id'] if record.get('deprecated', false) else
+              record['id'] | string }}
+          - type: AddedFieldDefinition
+            path:
+              - tenant_id
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - unique_key
+            value: >-
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
+              }}-{{ 'd' ~ record['id'] if record.get('deprecated', false) else
+              record['id'] | string }}
 
 spec:
   type: Spec
-  documentation_url: "https://documentation.bamboohr.com/reference"
+  documentation_url: https://documentation.bamboohr.com/reference
   connection_specification:
-    $schema: "http://json-schema.org/draft-07/schema#"
-    title: "BambooHR Source"
     type: object
+    $schema: http://json-schema.org/draft-07/schema#
     required:
-      - "tenant_id"
-      - "source_instance_id"
-      - "api_key"
-      - "domain"
-    additionalProperties: true
+      - insight_tenant_id
+      - insight_source_id
+      - bamboohr_api_key
+      - bamboohr_domain
     properties:
-      tenant_id:
+      bamboohr_domain:
         type: string
-        title: "Tenant ID"
-        description: "Tenant isolation identifier (UUID)."
-        order: 0
-      source_instance_id:
-        type: string
-        title: "Source Instance ID"
-        description: "Stable identifier for this BambooHR instance (e.g., 'bamboohr-acme-prod')."
+        description: Your BambooHR subdomain (e.g., 'acme' from acme.bamboohr.com).
+        order: 3
+        title: BambooHR Domain
         examples:
-          - "bamboohr-acme-prod"
-        order: 1
-      api_key:
+          - acme
+      bamboohr_api_key:
         type: string
-        title: "API Key"
-        description: "BambooHR API key for authentication. Found in BambooHR > Account > API Keys."
-        airbyte_secret: true
-        order: 1
-      domain:
-        type: string
-        title: "Domain"
-        description: "Your BambooHR subdomain (e.g., 'acme' from acme.bamboohr.com)."
-        examples:
-          - "acme"
+        description: >-
+          BambooHR API key for authentication. Found in BambooHR > Account > API
+          Keys.
         order: 2
-      employees_custom_fields:
+        title: BambooHR API Key
+        airbyte_secret: true
+      insight_source_id:
+        type: string
+        description: >-
+          Unique identifier for this BambooHR connector instance (e.g.,
+          'bamboohr-acme-prod').
+        order: 1
+        title: Insight Source ID
+        examples:
+          - bamboohr-acme-prod
+      insight_tenant_id:
+        type: string
+        description: Tenant isolation identifier (UUID).
+        order: 0
+        title: Insight Tenant ID
+      bamboohr_employees_custom_fields:
         type: array
-        items:
-          type: string
-        title: "Employees Custom Fields"
         description: >-
           Optional list of custom BambooHR field aliases to include in employee
           extraction (e.g., 'customFunctionalTeamRD', 'customActualProjects').
           Use the meta_fields stream to discover available field aliases.
+        items:
+          type: string
+        order: 4
+        title: Employees Custom Fields
         default: []
-        order: 3
+    additionalProperties: true
+
+metadata:
+  testedStreams:
+    employees:
+      isStale: true
+      hasRecords: true
+      streamHash: 0c996cb994098c272afe2142de2df66ac051b176
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+    meta_fields:
+      isStale: false
+      hasRecords: true
+      streamHash: b59b032cae54d56101e8cf4c9f89473e1184730f
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+    leave_requests:
+      isStale: true
+      hasRecords: true
+      streamHash: cf2969100973355de28b822a2e2515ff6fcd3308
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+  autoImportSchema:
+    employees: true
+    meta_fields: true
+    leave_requests: true
+
+concurrency_level:
+  type: ConcurrencyLevel
+  default_concurrency: 1

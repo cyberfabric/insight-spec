@@ -1,0 +1,58 @@
+version: 2
+
+seeds:
+  - name: fake_employees_v1
+    config:
+      schema: test_bamboohr
+      column_types:
+        tenant_id: String
+        source_id: String
+        unique_key: String
+        id: String
+        displayName: Nullable(String)
+        firstName: Nullable(String)
+        lastName: Nullable(String)
+        workEmail: Nullable(String)
+        employeeNumber: Nullable(String)
+        jobTitle: Nullable(String)
+        department: Nullable(String)
+        division: Nullable(String)
+        status: Nullable(String)
+        employmentHistoryStatus: Nullable(String)
+        supervisorEId: Nullable(String)
+        supervisorEmail: Nullable(String)
+        location: Nullable(String)
+        country: Nullable(String)
+        city: Nullable(String)
+        hireDate: Nullable(String)
+        terminationDate: Nullable(String)
+        raw_data: Nullable(String)
+        _airbyte_extracted_at: DateTime64(3)
+
+  - name: fake_employees_v2
+    config:
+      schema: test_bamboohr
+      column_types:
+        tenant_id: String
+        source_id: String
+        unique_key: String
+        id: String
+        displayName: Nullable(String)
+        firstName: Nullable(String)
+        lastName: Nullable(String)
+        workEmail: Nullable(String)
+        employeeNumber: Nullable(String)
+        jobTitle: Nullable(String)
+        department: Nullable(String)
+        division: Nullable(String)
+        status: Nullable(String)
+        employmentHistoryStatus: Nullable(String)
+        supervisorEId: Nullable(String)
+        supervisorEmail: Nullable(String)
+        location: Nullable(String)
+        country: Nullable(String)
+        city: Nullable(String)
+        hireDate: Nullable(String)
+        terminationDate: Nullable(String)
+        raw_data: Nullable(String)
+        _airbyte_extracted_at: DateTime64(3)
