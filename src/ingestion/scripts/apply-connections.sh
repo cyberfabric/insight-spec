@@ -50,6 +50,11 @@ if os.path.exists(state_path):
 
 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
+class ApiError(Exception):
+    def __init__(self, code, message):
+        self.code = code
+        self.message = message
+
 def api(method, path, data=None):
     body = json.dumps(data).encode() if data else None
     req = urllib.request.Request(f"{airbyte_url}{path}", data=body, headers=headers, method=method)
@@ -60,14 +65,17 @@ def api(method, path, data=None):
     except urllib.error.HTTPError as e:
         err = e.read().decode()
         print(f"  API {e.code}: {err[:200]}", file=sys.stderr)
-        return None
+        raise ApiError(e.code, err)
 
 def api_get(path, data):
-    """GET resource by ID. Returns resource dict or None if not found (404)."""
-    result = api("POST", path, data)
-    if result is None:
-        return None  # API error (404 or other)
-    return result
+    """GET resource by ID. Returns dict, None if 404, or exits on other errors."""
+    try:
+        return api("POST", path, data)
+    except ApiError as e:
+        if e.code == 404:
+            return None
+        print(f"  ERROR: Airbyte API returned {e.code} (expected 200 or 404)", file=sys.stderr)
+        sys.exit(1)
 
 # --- K8s Secret discovery ---
 import subprocess, base64

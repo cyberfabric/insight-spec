@@ -65,7 +65,7 @@ Chosen option: **K8s Secrets with label-based discovery**, because Kubernetes Se
 * Good, because the credential model is simple and unambiguous — K8s Secrets are the sole source, no fallback logic to debug
 * Bad, because the pod running `apply-connections.sh` requires `kubectl` access and a ServiceAccount with RBAC permissions to read Secrets in the target namespace
 * Bad, because Secret field names must exactly match the connector's `connection_specification` — consumers need per-connector documentation of required fields
-* Follow-up: update existing specs, READMEs, and example configs to use K8s Secrets as the primary approach, deprecating inline credentials
+* Note: inline credentials have been fully removed — K8s Secrets are the sole source with no fallback
 
 ### Confirmation
 

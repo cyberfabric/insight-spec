@@ -80,9 +80,10 @@ Consumers deploy Constructor Insight into their own K8s clusters and need to man
 - Secret exists alongside inline config; fields merged correctly with inline taking precedence
 
 **Error Scenarios**:
-- Secret referenced by tenant config connector name not found; script logs error with expected Secret name and skips connector
+- No K8s Secret found for a connector; connector is skipped with a log message
+- Secret found but missing `insight.cyberfabric.com/source-id` annotation; script exits with error
 - Secret found but missing required credential fields; Airbyte API returns validation error
-- kubectl not available or RBAC denies access; script logs permission error and exits
+- kubectl not available or RBAC denies access; script exits with error
 
 **Steps**:
 1. [ ] - `p1` - Toolbox loads tenant YAML and iterates over `connectors` dict - `inst-load-tenant`
@@ -137,7 +138,7 @@ Consumers deploy Constructor Insight into their own K8s clusters and need to man
    1. [ ] - `p1` - Parse JSON response, extract `.items[]` - `inst-parse-items`
 3. [ ] - `p1` - **CATCH** kubectl error (not found, RBAC denied, timeout) - `inst-catch-kubectl`
    1. [ ] - `p1` - Log error with kubectl exit code and stderr - `inst-log-kubectl-error`
-   2. [ ] - `p1` - **RETURN** empty list - `inst-return-empty`
+   2. [ ] - `p1` - **EXIT** with error (no silent fallback) - `inst-exit-error`
 4. [ ] - `p1` - **FOR EACH** Secret in items - `inst-filter-secrets`
    1. [ ] - `p1` - Extract annotation `insight.cyberfabric.com/connector` as connector type - `inst-extract-type`
    2. [ ] - `p1` - Extract annotation `insight.cyberfabric.com/source-id` as source ID - `inst-extract-source-id`
