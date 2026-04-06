@@ -5,7 +5,7 @@ name = "InsightSpec"
 slug = "insightspec"
 kit = "sdlc"
 codebase = ["docs"]
-children = []
+children = ["ir", "person", "orgchart"]
 
 [[systems.artifacts]]
 kind = "DESIGN"
@@ -41,11 +41,6 @@ name = "Storage Technology Evaluation"
 kind = "DESIGN"
 path = "docs/architecture/CONNECTORS_ARCHITECTURE.md"
 name = "Connectors Architecture"
-
-[[systems.artifacts]]
-kind = "DESIGN"
-path = "docs/domain/identity-resolution/specs/DESIGN.md"
-name = "Identity Resolution Service Design"
 
 [[systems.artifacts]]
 kind = "DESIGN"
@@ -350,3 +345,65 @@ kind = "PRD"
 path = "docs/components/orchestrator/specs/PRD.md"
 name = "Orchestrator PRD"
 traceability = "DOCS-ONLY"
+
+[[systems]]
+name = "Identity Resolution"
+slug = "ir"
+kit = "sdlc"
+codebase = ["docs/domain/identity-resolution"]
+children = []
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/domain/identity-resolution/specs/DESIGN.md"
+name = "Identity Resolution Design"
+
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/domain/identity-resolution/specs/PRD.md"
+name = "Identity Resolution PRD"
+
+[[systems.artifacts]]
+kind = "DECOMPOSITION"
+path = "docs/domain/identity-resolution/specs/DECOMPOSITION.md"
+name = "Identity Resolution Decomposition"
+
+
+[[systems]]
+name = "Person Domain"
+slug = "person"
+kit = "sdlc"
+codebase = ["docs/domain/person"]
+children = []
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/domain/person/specs/DESIGN.md"
+name = "Person Domain Design"
+
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/domain/person/specs/PRD.md"
+name = "Person Domain PRD"
+
+[[systems.artifacts]]
+kind = "ADR"
+path = "docs/domain/person/specs/ADR/0001-shared-unmapped-table.md"
+name = "ADR-0001: Shared unmapped table for identity and person domains"
+
+[[systems]]
+name = "Org-Chart Domain"
+slug = "orgchart"
+kit = "sdlc"
+codebase = ["docs/domain/org-chart"]
+children = []
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/domain/org-chart/specs/DESIGN.md"
+name = "Org-Chart Domain Design"
+
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/domain/org-chart/specs/PRD.md"
+name = "Org-Chart Domain PRD"
