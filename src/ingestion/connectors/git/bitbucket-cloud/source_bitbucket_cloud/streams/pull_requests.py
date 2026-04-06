@@ -159,7 +159,7 @@ class PullRequestsStream(BitbucketCloudRestStream):
         """Single GET with throttle, rate-limit update, and retry."""
 
         def _call():
-            self._rate_limiter.throttle("rest")
+            self._rate_limiter.wait_if_needed("rest")
             resp = req.get(
                 url,
                 headers=rest_headers(self._username, self._token),
