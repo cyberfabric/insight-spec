@@ -34,6 +34,7 @@ stringData:
 | `bamboohr_api_key` | Yes | BambooHR API key (Account > API Keys) |
 | `bamboohr_domain` | Yes | BambooHR subdomain (e.g. `acme` from `acme.bamboohr.com`) |
 | `bamboohr_employees_custom_fields` | No | JSON array of custom field aliases (e.g. `["customTeam", "customProjects"]`) |
+| `bamboohr_start_date` | No | Leave requests history start date, ISO format (default: `2020-01-01`) |
 
 > **Note on `username` / `password` spec fields.**
 > The Airbyte Builder auto-generates `username` and `password` properties in

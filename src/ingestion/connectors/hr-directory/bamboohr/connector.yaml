@@ -286,7 +286,7 @@ streams:
           $ref: "#/definitions/linked/HttpRequester/request_headers"
         request_parameters:
           end: "{{ now_utc().strftime('%Y-%m-%d') }}"
-          start: "2020-01-01"
+          start: "{{ config.get('bamboohr_start_date', '2020-01-01') }}"
       record_selector:
         type: RecordSelector
         extractor:
@@ -1995,6 +1995,16 @@ spec:
         order: 4
         title: Employees Custom Fields
         default: []
+      bamboohr_start_date:
+        type: string
+        description: >-
+          Start date for leave requests history (ISO format YYYY-MM-DD).
+          Defaults to 2020-01-01 if not set.
+        order: 5
+        title: Start Date
+        default: "2020-01-01"
+        examples:
+          - "2024-01-01"
     additionalProperties: true
 
 metadata:
