@@ -113,7 +113,7 @@ def _with_retry(
             elif "401" in error_str or "403" in error_str:
                 raise
             elif "404" in error_str:
-                raise  # deleted/missing resources are non-retryable
+                return []  # deleted/missing resources: skip, don't abort
             jitter = random.uniform(0, 1)
             delay = RETRY_BASE_DELAY * (2 ** attempt) + jitter
             logger.warning(f"Slice retry {attempt + 1}/{MAX_RETRIES}: {e}. Waiting {delay:.1f}s...")

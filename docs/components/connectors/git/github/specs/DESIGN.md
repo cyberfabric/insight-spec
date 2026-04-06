@@ -79,7 +79,7 @@ Fault tolerance is achieved through Airbyte CDK retry semantics, slice-level and
 
 ### 1.3 Architecture Layers
 
-```
+```text
 +-----------------------------------------------------------------------+
 |  Airbyte Orchestrator                                                  |
 |  (triggers SourceGitHub via Airbyte protocol)                          |

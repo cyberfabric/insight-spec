@@ -1,5 +1,6 @@
 """GitHub commits stream (GraphQL, incremental, partitioned by repo+branch)."""
 
+import json
 import logging
 from typing import Any, Iterable, Mapping, MutableMapping, Optional
 
@@ -162,8 +163,8 @@ class CommitsStream(GitHubGraphQLStream):
                     break
 
             # --- Optimization 2: Branch HEAD dedup ---
-            def _sort_key(r):
-                return 0 if r.get("name") == default_branch else 1
+            def _sort_key(r, db=default_branch):
+                return 0 if r.get("name") == db else 1
 
             seen_heads: dict[str, str] = {}
             skipped_map: dict[str, str] = {}
@@ -276,7 +277,7 @@ class CommitsStream(GitHubGraphQLStream):
             if resp.status_code != 200:
                 return -1  # Unknown, don't skip
             return resp.json().get("ahead_by", -1)
-        except Exception:
+        except (requests.RequestException, json.JSONDecodeError, ValueError, KeyError):
             return -1  # On error, don't skip
 
     def get_updated_state(

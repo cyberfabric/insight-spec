@@ -236,7 +236,7 @@ class PullRequestsStream(GitHubGraphQLStream):
             merged_by = pr_node.get("mergedBy") or {}
 
             labels_nodes = (pr_node.get("labels") or {}).get("nodes") or []
-            labels = [l.get("name") for l in labels_nodes if l.get("name")]
+            labels = [label.get("name") for label in labels_nodes if label.get("name")]
 
             milestone = pr_node.get("milestone") or {}
 

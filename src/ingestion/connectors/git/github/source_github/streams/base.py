@@ -26,6 +26,13 @@ def _is_rate_limit_403(resp) -> bool:
         return True
     if resp.headers.get("X-RateLimit-Remaining") == "0":
         return True
+    # Check response body for secondary rate limit message
+    try:
+        body_text = resp.text.lower()
+        if "secondary rate limit" in body_text or "rate limit" in body_text:
+            return True
+    except Exception:
+        pass
     return False
 
 
@@ -43,6 +50,18 @@ def check_rest_response(resp, context: str = ""):
     if resp.status_code >= 400:
         raise RuntimeError(f"GitHub API error {resp.status_code} for {context}: {resp.text[:200]}")
     return True
+
+
+def _is_fatal(exc: Exception) -> bool:
+    """Return True if the error should abort the stream (auth failures)."""
+    error_str = str(exc).lower()
+    if "rate limit" in error_str:
+        return True  # rate limit exhaustion is fatal — need to wait
+    if "401" in error_str:
+        return True
+    if "403" in error_str:
+        return True
+    return False
 
 
 def _make_pk(tenant_id: str, source_instance_id: str, *parts: str) -> str:
@@ -229,7 +248,7 @@ class GitHubGraphQLStream(HttpStream, ABC):
         **kwargs,
     ) -> Iterable[Mapping[str, Any]]:
         body = response.json()
-        self._update_graphql_rate_limit(body)
+        self._update_graphql_rate_limit(body, response)
         self._rate_limiter.wait_if_needed("graphql")
 
         if "errors" in body:
@@ -242,12 +261,20 @@ class GitHubGraphQLStream(HttpStream, ABC):
         for node in nodes:
             yield self._add_envelope(node)
 
-    def _update_graphql_rate_limit(self, body: dict):
+    def _update_graphql_rate_limit(self, body: dict, response: requests.Response = None):
         rate_limit = body.get("data", {}).get("rateLimit", {})
         remaining = rate_limit.get("remaining")
         reset_at = rate_limit.get("resetAt")
         if remaining is not None and reset_at:
             self._rate_limiter.update_graphql(remaining, reset_at)
+        elif response is not None:
+            # Fallback: read rate limit from response headers (GitHub recommends this)
+            hdr_remaining = response.headers.get("x-ratelimit-remaining")
+            hdr_reset = response.headers.get("x-ratelimit-reset")
+            if hdr_remaining is not None and hdr_reset is not None:
+                from datetime import datetime, timezone
+                reset_dt = datetime.fromtimestamp(float(hdr_reset), tz=timezone.utc)
+                self._rate_limiter.update_graphql(int(hdr_remaining), reset_dt.isoformat())
 
     def _add_envelope(self, record: dict, pk_parts: Optional[list] = None) -> dict:
         record["tenant_id"] = self._tenant_id

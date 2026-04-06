@@ -7,7 +7,7 @@ import requests as req
 
 from source_github.clients.auth import rest_headers
 from source_github.clients.concurrent import fetch_parallel_with_slices, retry_request
-from source_github.streams.base import GitHubRestStream, _make_pk, _now_iso, check_rest_response
+from source_github.streams.base import GitHubRestStream, _is_fatal, _make_pk, _now_iso, check_rest_response
 from source_github.streams.commits import CommitsStream
 from source_github.streams.pull_requests import PullRequestsStream
 
@@ -69,7 +69,10 @@ class FileChangesStream(GitHubRestStream):
             logger.info(f"File changes: fetching PR files for {len(pr_slices)} PRs")
             for result in fetch_parallel_with_slices(self._fetch_pr_files, pr_slices, self._max_workers):
                 if result.error is not None:
-                    raise result.error
+                    if _is_fatal(result.error):
+                        raise result.error
+                    logger.warning(f"Skipping PR file slice {result.slice.get('partition_key', '?')}: {result.error}")
+                    continue
                 yield from result.records
                 self._advance_pr_state(result.slice)
 
@@ -79,7 +82,10 @@ class FileChangesStream(GitHubRestStream):
             logger.info(f"File changes: fetching direct-push files for {len(direct_slices)} commits")
             for result in fetch_parallel_with_slices(self._fetch_direct_push_files, direct_slices, self._max_workers):
                 if result.error is not None:
-                    raise result.error
+                    if _is_fatal(result.error):
+                        raise result.error
+                    logger.warning(f"Skipping commit file slice {result.slice.get('partition_key', '?')}: {result.error}")
+                    continue
                 yield from result.records
                 self._advance_direct_state(result.slice)
 
@@ -175,7 +181,7 @@ class FileChangesStream(GitHubRestStream):
 
     # --- Fetch methods (thread-safe) ---
 
-    def _do_rest_get(self, url: str, params: dict = None) -> req.Response:
+    def _do_rest_get(self, url: str, params: Optional[dict] = None) -> req.Response:
         """REST GET with page-level retry for retriable errors. Thread-safe."""
         def _call():
             self._rate_limiter.throttle("rest")

@@ -7,7 +7,7 @@ import requests as req
 
 from source_github.clients.auth import rest_headers
 from source_github.clients.concurrent import fetch_parallel_with_slices, retry_request
-from source_github.streams.base import GitHubRestStream, _make_pk, _now_iso, check_rest_response, _is_rate_limit_403
+from source_github.streams.base import GitHubRestStream, _is_fatal, _make_pk, _now_iso, check_rest_response, _is_rate_limit_403
 from source_github.streams.pull_requests import PullRequestsStream
 
 logger = logging.getLogger("airbyte")
@@ -48,14 +48,16 @@ class CommentsStream(GitHubRestStream):
     def _get_known_pr_numbers(self, repo_key: str) -> set:
         """Return the set of known PR numbers for a repo. Built lazily from parent cache."""
         if self._known_pr_numbers is None:
-            self._known_pr_numbers = {}
+            # Build into a local var first, then publish atomically
+            local_known = {}
             for pr in self._parent.get_child_slices():
                 owner = pr.get("repo_owner", "")
                 repo = pr.get("repo_name", "")
                 num = pr.get("number")
                 if owner and repo and num is not None:
                     rk = f"{owner}/{repo}"
-                    self._known_pr_numbers.setdefault(rk, set()).add(num)
+                    local_known.setdefault(rk, set()).add(num)
+            self._known_pr_numbers = local_known
         return self._known_pr_numbers.get(repo_key, set())
 
     def stream_slices(
@@ -107,7 +109,10 @@ class CommentsStream(GitHubRestStream):
             slices = self.stream_slices(stream_state=stream_state)
             for result in fetch_parallel_with_slices(self._fetch_repo_comments, slices, self._max_workers):
                 if result.error is not None:
-                    raise result.error
+                    if _is_fatal(result.error):
+                        raise result.error
+                    logger.warning(f"Skipping comment slice {result.slice.get('repo_key', '?')}: {result.error}")
+                    continue
                 yield from result.records
                 self._advance_state(result.slice, result.records)
 
@@ -150,16 +155,20 @@ class CommentsStream(GitHubRestStream):
 
     def _do_rest_get(self, url: str, params: dict = None) -> req.Response:
         """REST GET with page-level retry. Thread-safe."""
-        def _call():
+        def _call(_url=url, _params=params):
             self._rate_limiter.throttle("rest")
-            resp = req.get(url, headers=rest_headers(self._token), params=params, timeout=30)
+            resp = req.get(_url, headers=rest_headers(self._token), params=_params, timeout=30)
+            remaining = resp.headers.get("X-RateLimit-Remaining")
+            reset = resp.headers.get("X-RateLimit-Reset")
+            if remaining and reset:
+                self._rate_limiter.update_rest(int(remaining), float(reset))
             if resp.status_code in (502, 503):
                 self._rate_limiter.on_secondary_limit()
-                raise RuntimeError(f"GitHub secondary rate limit ({resp.status_code}) for {url}")
-            if _is_rate_limit_403(resp):
-                raise RuntimeError(f"GitHub rate limit exhausted (403) for {url}")
-            if resp.status_code == 429 or resp.status_code >= 500:
-                raise RuntimeError(f"GitHub API error {resp.status_code} for {url}")
+                raise RuntimeError(f"GitHub secondary rate limit ({resp.status_code}) for {_url}")
+            if _is_rate_limit_403(resp) or resp.status_code == 429:
+                raise RuntimeError(f"rate limit exhausted ({resp.status_code}) for {_url}")
+            if resp.status_code >= 500:
+                raise RuntimeError(f"GitHub API error {resp.status_code} for {_url}")
             return resp
         return retry_request(_call, context=url)
 

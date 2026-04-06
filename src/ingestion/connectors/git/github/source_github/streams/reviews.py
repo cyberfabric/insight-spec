@@ -7,7 +7,7 @@ import requests as req
 
 from source_github.clients.auth import rest_headers
 from source_github.clients.concurrent import fetch_parallel_with_slices, retry_request
-from source_github.streams.base import GitHubRestStream, _make_pk, _now_iso, check_rest_response, _is_rate_limit_403
+from source_github.streams.base import GitHubRestStream, _is_fatal, _make_pk, _now_iso, check_rest_response, _is_rate_limit_403
 from source_github.streams.pull_requests import PullRequestsStream
 
 logger = logging.getLogger("airbyte")
@@ -101,7 +101,10 @@ class ReviewsStream(GitHubRestStream):
                 self._fetch_reviews, self.stream_slices(stream_state=stream_state), self._max_workers
             ):
                 if result.error is not None:
-                    raise result.error
+                    if _is_fatal(result.error):
+                        raise result.error
+                    logger.warning(f"Skipping review slice {result.slice.get('partition_key', '?')}: {result.error}")
+                    continue
                 yield from result.records
                 self._advance_state(result.slice)
 
@@ -126,14 +129,14 @@ class ReviewsStream(GitHubRestStream):
         while url:
             _url, _params = url, params
 
-            def _call():
+            def _call(_url=_url, _params=_params):
                 self._rate_limiter.throttle("rest")
                 r = req.get(_url, headers=rest_headers(self._token), params=_params, timeout=30)
                 if r.status_code in (502, 503):
                     self._rate_limiter.on_secondary_limit()
                     raise RuntimeError(f"GitHub secondary rate limit ({r.status_code})")
                 if _is_rate_limit_403(r):
-                    raise RuntimeError(f"GitHub rate limit exhausted (403)")
+                    raise RuntimeError("GitHub rate limit exhausted (403)")
                 if r.status_code == 429 or r.status_code >= 500:
                     raise RuntimeError(f"GitHub API error {r.status_code}")
                 return r

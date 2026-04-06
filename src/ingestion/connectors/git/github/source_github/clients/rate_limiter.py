@@ -58,26 +58,29 @@ class RateLimiter:
 
     def throttle(self, api_type: str = "rest"):
         """Enforce minimum interval between requests. Thread-safe."""
+        # Phase 1: check secondary cooldown (sleep outside lock)
         with self._lock:
-            # Check secondary cooldown first
             now = time.monotonic()
-            if self._secondary_cooldown_until > now:
-                wait = self._secondary_cooldown_until - now
-                logger.warning(f"Secondary rate limit cooldown: waiting {wait:.0f}s")
-                time.sleep(wait)
-                now = time.monotonic()
+            secondary_wait = max(0.0, self._secondary_cooldown_until - now)
 
-            # Per-API-type throttle
+        if secondary_wait > 0:
+            logger.warning(f"Secondary rate limit cooldown: waiting {secondary_wait:.0f}s")
+            time.sleep(secondary_wait)
+
+        # Phase 2: per-API-type throttle (compute under lock, sleep outside)
+        with self._lock:
+            now = time.monotonic()
             if api_type == "graphql":
                 elapsed = now - self._last_graphql_time
-                if elapsed < MIN_GRAPHQL_INTERVAL:
-                    time.sleep(MIN_GRAPHQL_INTERVAL - elapsed)
-                self._last_graphql_time = time.monotonic()
+                throttle_wait = max(0.0, MIN_GRAPHQL_INTERVAL - elapsed)
+                self._last_graphql_time = now + throttle_wait
             else:
                 elapsed = now - self._last_rest_time
-                if elapsed < MIN_REST_INTERVAL:
-                    time.sleep(MIN_REST_INTERVAL - elapsed)
-                self._last_rest_time = time.monotonic()
+                throttle_wait = max(0.0, MIN_REST_INTERVAL - elapsed)
+                self._last_rest_time = now + throttle_wait
+
+        if throttle_wait > 0:
+            time.sleep(throttle_wait)
 
     def on_secondary_limit(self):
         """Called when a 502/503 response is received. Triggers cooldown."""

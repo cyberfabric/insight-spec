@@ -8,7 +8,7 @@ import requests as req
 from source_github.clients.auth import graphql_headers
 from source_github.clients.concurrent import fetch_parallel_with_slices
 from source_github.graphql.queries import PR_COMMITS_QUERY
-from source_github.streams.base import GitHubRestStream, _make_pk, _now_iso
+from source_github.streams.base import GitHubRestStream, _is_fatal, _make_pk, _now_iso
 from source_github.streams.pull_requests import PullRequestsStream
 
 logger = logging.getLogger("airbyte")
@@ -96,7 +96,10 @@ class PRCommitsStream(GitHubRestStream):
                 self._fetch_pr_commits, self.stream_slices(stream_state=stream_state), self._max_workers
             ):
                 if result.error is not None:
-                    raise result.error
+                    if _is_fatal(result.error):
+                        raise result.error
+                    logger.warning(f"Skipping PR commits slice {result.slice.get('partition_key', '?')}: {result.error}")
+                    continue
                 yield from result.records
                 self._advance_state(result.slice)
 
