@@ -286,9 +286,9 @@ src/ingestion/
 │   └── wait-for-services.sh        #   kubectl wait for pods
 │
 └── tools/
-    ├── toolbox/                     # insight-toolbox Docker image
+    ├── toolbox/                     # insight-toolbox Docker image (ghcr.io/cyberfabric/insight-toolbox)
     │   ├── Dockerfile               #   python + dbt + kubectl + yq
-    │   └── build.sh                 #   Build + load into Kind
+    │   └── build.sh                 #   Build + push to GHCR (or load into Kind)
     └── declarative-connector/       # Local connector debugging
         └── source.sh               #   check / discover / read
 ```
@@ -296,36 +296,33 @@ src/ingestion/
 ## Airbyte State
 
 All Airbyte resource IDs (definitions, sources, destinations, connections) are tracked in
-`connections/.airbyte-state.yaml`. This file is auto-generated and gitignored — it's specific
-to the current Airbyte instance.
+per-tenant state files under `connections/.state/`. These files are auto-generated and
+gitignored — they're specific to the current Airbyte instance.
 
 ```yaml
-# connections/.airbyte-state.yaml (auto-generated)
-workspace_id: "8564ee19-..."
-definitions:
-  m365: "f8b1f832-..."
-  zoom: "1227c334-..."
+# connections/.state/virtuozzo.yaml (auto-generated per tenant)
+workspace_id: "4f79767b-..."
+shared_destination_id: "731c8d42-..."
+connectors:
+  m365-m365-main:
+    definition_id: "046ef483-..."
+    source_id: "60c560e8-..."
+    connection_id: "0220d2fe-..."
 tenants:
-  example-tenant:
-    destinations:
-      m365: "09e5fc84-..."
-      zoom: "cb676fc0-..."
+  virtuozzo:
     sources:
-      m365: "591af227-..."
-      zoom: "73dab641-..."
+      m365-m365-main: "60c560e8-..."
     connections:
-      m365: "b4a78d7b-..."
-      zoom: "d04a508a-..."
+      m365-m365-main: "0220d2fe-..."
+definitions:
+  m365-m365-main: "046ef483-..."
 ```
 
-Scripts read/write this state automatically. If state gets out of sync:
-
-```bash
-./scripts/sync-airbyte-state.sh    # re-fetch all IDs from Airbyte API
-```
+Scripts read/write state per-tenant automatically. Each tenant config (`connections/<tenant>.yaml`)
+produces its own state file (`connections/.state/<tenant>.yaml`).
 
 **Storage backend**:
-- **Local (host)**: file `connections/.airbyte-state.yaml`
+- **Local (host)**: files in `connections/.state/`
 - **In-cluster (K8s)**: ConfigMap `airbyte-state` in namespace `data`
 - Scripts auto-detect the backend
 
@@ -465,4 +462,4 @@ ClickHouse uses `strategy: Recreate` — the old pod is terminated before the ne
 |----------|---------|-------------|
 | `ENV` | `local` | `local` (Kind) or `production` (existing K8s cluster) |
 | `KUBECONFIG` | `~/.kube/kind-ingestion` | Path to kubeconfig |
-| `TOOLBOX_IMAGE` | `insight-toolbox:local` | Docker image for toolbox |
+| `TOOLBOX_IMAGE` | `insight-toolbox:local` | Docker image for toolbox (production: `ghcr.io/cyberfabric/insight-toolbox:latest`) |

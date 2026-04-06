@@ -27,7 +27,7 @@ If the connector is new, it creates a builder project and publishes a new defini
 
 **Important**:
 - `upload-manifests.sh` updates definitions in-place — no duplicate IDs
-- After upload, definition ID is saved to `connections/.airbyte-state.yaml`
+- After upload, definition ID is saved to per-tenant state (`connections/.state/<tenant>.yaml`)
 - All subsequent scripts read IDs from state, not by name lookup
 
 ## Phase 2: Create/Update Connections
@@ -54,14 +54,10 @@ This script is idempotent — it handles both creation and updates:
 
 ### Airbyte State
 
-All resource IDs are stored in `connections/.airbyte-state.yaml` (gitignored).
-Scripts read/write this file automatically. If state gets corrupted:
+All resource IDs are stored per-tenant in `connections/.state/<tenant>.yaml` (gitignored).
+Scripts read/write these files automatically. Each tenant has its own isolated state.
 
-```bash
-./scripts/sync-airbyte-state.sh   # re-fetch all IDs from Airbyte API
-```
-
-On host: state is a YAML file. In K8s: state is a ConfigMap `airbyte-state`.
+On host: per-tenant YAML files. In K8s: ConfigMap `airbyte-state`.
 
 ## Phase 3: Create Workflows
 

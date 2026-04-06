@@ -166,6 +166,8 @@ Quick test: `kubectl get workflows -n argo --no-headers | tail -5`
 
 If `<name>` is not a path, search `src/ingestion/connectors/` for it.
 
+ALWAYS use the full relative path (e.g. `collaboration/m365`, not just `m365`) when calling `upload-manifests.sh` directly — it resolves `connectors/{path}/connector.yaml`.
+
 If `<command>` is omitted, show available commands and existing connectors.
 
 ### Context Variables
