@@ -61,8 +61,8 @@ class SourceBitbucketCloud(AbstractSource):
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
         username = config.get("username")
         token = config["token"]
-        tenant_id = config["tenant_id"]
-        source_instance_id = config["source_instance_id"]
+        tenant_id = config["insight_tenant_id"]
+        source_id = config["insight_source_id"]
         workspaces = config["workspaces"]
         start_date = config.get("start_date")
         rate_limit_threshold = config.get("rate_limit_threshold", 100)
@@ -74,7 +74,7 @@ class SourceBitbucketCloud(AbstractSource):
             "username": username,
             "token": token,
             "tenant_id": tenant_id,
-            "source_instance_id": source_instance_id,
+            "source_id": source_id,
             "rate_limiter": rate_limiter,
         }
 

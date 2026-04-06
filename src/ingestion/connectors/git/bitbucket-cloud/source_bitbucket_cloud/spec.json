@@ -4,18 +4,18 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Bitbucket Cloud Source Spec",
     "type": "object",
-    "required": ["tenant_id", "source_instance_id", "token", "workspaces"],
+    "required": ["insight_tenant_id", "insight_source_id", "token", "workspaces"],
     "additionalProperties": false,
     "properties": {
-      "tenant_id": {
+      "insight_tenant_id": {
         "type": "string",
         "title": "Tenant ID",
         "description": "Unique tenant identifier for multi-tenant data isolation.",
         "order": 0
       },
-      "source_instance_id": {
+      "insight_source_id": {
         "type": "string",
-        "title": "Source Instance ID",
+        "title": "Source ID",
         "description": "Stable identifier for this connector instance (e.g., bitbucket-cloud-acme-prod).",
         "order": 1
       },

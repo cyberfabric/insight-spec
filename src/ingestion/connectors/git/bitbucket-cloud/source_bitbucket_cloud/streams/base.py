@@ -63,9 +63,13 @@ def _is_fatal(exc: Exception) -> bool:
     return False
 
 
-def _make_pk(tenant_id: str, source_instance_id: str, *parts: str) -> str:
+def _make_pk(tenant_id: str, source_id: str, *parts: str) -> str:
     suffix = ":".join(parts)
-    return f"urn:bitbucket_cloud:{tenant_id}:{source_instance_id}:{suffix}"
+    return f"urn:bitbucket_cloud:{tenant_id}:{source_id}:{suffix}"
+
+
+def _make_unique_key(tenant_id: str, source_id: str, *natural_key_parts: str) -> str:
+    return f"{tenant_id}-{source_id}-{'-'.join(natural_key_parts)}"
 
 
 class BitbucketCloudRestStream(HttpStream, ABC):
@@ -79,7 +83,7 @@ class BitbucketCloudRestStream(HttpStream, ABC):
         username: str | None,
         token: str,
         tenant_id: str,
-        source_instance_id: str,
+        source_id: str,
         rate_limiter: RateLimiter,
         **kwargs,
     ):
@@ -87,7 +91,7 @@ class BitbucketCloudRestStream(HttpStream, ABC):
         self._username = username
         self._token = token
         self._tenant_id = tenant_id
-        self._source_instance_id = source_instance_id
+        self._source_id = source_id
         self._rate_limiter = rate_limiter
 
     def request_headers(self, **kwargs) -> Mapping[str, Any]:
@@ -178,9 +182,10 @@ class BitbucketCloudRestStream(HttpStream, ABC):
 
     def _add_envelope(self, record: dict, pk_parts: Optional[list] = None) -> dict:
         record["tenant_id"] = self._tenant_id
-        record["source_instance_id"] = self._source_instance_id
+        record["source_id"] = self._source_id
         record["data_source"] = "insight_bitbucket_cloud"
         record["collected_at"] = _now_iso()
         if pk_parts:
-            record["pk"] = _make_pk(self._tenant_id, self._source_instance_id, *pk_parts)
+            record["pk"] = _make_pk(self._tenant_id, self._source_id, *pk_parts)
+            record["unique_key"] = _make_unique_key(self._tenant_id, self._source_id, *pk_parts)
         return record

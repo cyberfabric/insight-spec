@@ -260,7 +260,7 @@ class PullRequestsStream(BitbucketCloudRestStream):
                 record = {
                     "pk": _make_pk(
                         self._tenant_id,
-                        self._source_instance_id,
+                        self._source_id,
                         workspace,
                         repo_slug,
                         pr_id_str,
@@ -339,7 +339,8 @@ class PullRequestsStream(BitbucketCloudRestStream):
             "properties": {
                 "pk": {"type": "string"},
                 "tenant_id": {"type": "string"},
-                "source_instance_id": {"type": "string"},
+                "source_id": {"type": "string"},
+                "unique_key": {"type": "string"},
                 "data_source": {"type": "string"},
                 "collected_at": {"type": "string"},
                 "database_id": {"type": ["null", "integer"]},

@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Iterable, Mapping, MutableMapping, Optional
 
-from source_bitbucket_cloud.streams.base import BitbucketCloudRestStream, _make_pk, _now_iso
+from source_bitbucket_cloud.streams.base import BitbucketCloudRestStream, _make_pk, _make_unique_key, _now_iso
 from source_bitbucket_cloud.streams.pull_requests import PullRequestsStream
 
 logger = logging.getLogger("airbyte")
@@ -119,9 +119,10 @@ class PullRequestReviewsStream(BitbucketCloudRestStream):
             review_state = "APPROVED" if approved else "UNAPPROVED"
 
             yield {
-                "pk": _make_pk(self._tenant_id, self._source_instance_id, workspace, repo_slug, str(pr_id), user_uuid),
+                "pk": _make_pk(self._tenant_id, self._source_id, workspace, repo_slug, str(pr_id), user_uuid),
+                "unique_key": _make_unique_key(self._tenant_id, self._source_id, workspace, repo_slug, str(pr_id), user_uuid),
                 "tenant_id": self._tenant_id,
-                "source_instance_id": self._source_instance_id,
+                "source_id": self._source_id,
                 "data_source": "insight_bitbucket_cloud",
                 "collected_at": _now_iso(),
                 "pr_id": pr_id,
@@ -151,7 +152,8 @@ class PullRequestReviewsStream(BitbucketCloudRestStream):
             "properties": {
                 "pk": {"type": "string"},
                 "tenant_id": {"type": "string"},
-                "source_instance_id": {"type": "string"},
+                "source_id": {"type": "string"},
+                "unique_key": {"type": "string"},
                 "data_source": {"type": "string"},
                 "collected_at": {"type": "string"},
                 "pr_id": {"type": ["null", "integer"]},

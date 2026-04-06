@@ -7,7 +7,7 @@ import requests as req
 
 from source_bitbucket_cloud.clients.auth import rest_headers
 from source_bitbucket_cloud.clients.concurrent import fetch_parallel_with_slices, retry_request
-from source_bitbucket_cloud.streams.base import BitbucketCloudRestStream, _is_fatal, _make_pk, _now_iso, check_rest_response
+from source_bitbucket_cloud.streams.base import BitbucketCloudRestStream, _is_fatal, _make_pk, _make_unique_key, _now_iso, check_rest_response
 from source_bitbucket_cloud.streams.pull_requests import PullRequestsStream
 
 logger = logging.getLogger("airbyte")
@@ -158,11 +158,15 @@ class PRCommitsStream(BitbucketCloudRestStream):
 
                 records.append({
                     "pk": _make_pk(
-                        self._tenant_id, self._source_instance_id,
+                        self._tenant_id, self._source_id,
+                        workspace, repo_slug, str(pr_id), commit_hash,
+                    ),
+                    "unique_key": _make_unique_key(
+                        self._tenant_id, self._source_id,
                         workspace, repo_slug, str(pr_id), commit_hash,
                     ),
                     "tenant_id": self._tenant_id,
-                    "source_instance_id": self._source_instance_id,
+                    "source_id": self._source_id,
                     "data_source": "insight_bitbucket_cloud",
                     "collected_at": _now_iso(),
                     "pr_id": pr_id,
@@ -195,7 +199,8 @@ class PRCommitsStream(BitbucketCloudRestStream):
             "properties": {
                 "pk": {"type": "string"},
                 "tenant_id": {"type": "string"},
-                "source_instance_id": {"type": "string"},
+                "source_id": {"type": "string"},
+                "unique_key": {"type": "string"},
                 "data_source": {"type": "string"},
                 "collected_at": {"type": "string"},
                 "pr_id": {"type": ["null", "integer"]},

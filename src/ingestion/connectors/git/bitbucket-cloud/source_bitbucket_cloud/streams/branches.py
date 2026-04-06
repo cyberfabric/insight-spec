@@ -84,7 +84,7 @@ class BranchesStream(BitbucketCloudRestStream):
                 "default_branch": s.get("default_branch", ""),
             }
             record["pk"] = _make_pk(
-                self._tenant_id, self._source_instance_id,
+                self._tenant_id, self._source_id,
                 workspace, repo_slug, branch_name,
             )
             yield self._add_envelope(record)
@@ -103,7 +103,8 @@ class BranchesStream(BitbucketCloudRestStream):
             "properties": {
                 "pk": {"type": "string"},
                 "tenant_id": {"type": "string"},
-                "source_instance_id": {"type": "string"},
+                "source_id": {"type": "string"},
+                "unique_key": {"type": "string"},
                 "data_source": {"type": "string"},
                 "collected_at": {"type": "string"},
                 "name": {"type": ["null", "string"]},

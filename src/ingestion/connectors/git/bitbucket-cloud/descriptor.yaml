@@ -1,6 +1,12 @@
 name: bitbucket-cloud
 version: "1.0"
 type: cdk
+schedule: "0 3 * * *"
+workflow: sync
+dbt_select: "tag:bitbucket-cloud+"
+
+connection:
+  namespace: "bronze_bitbucket_cloud"
 
 silver_targets:
   - class_git_repositories
