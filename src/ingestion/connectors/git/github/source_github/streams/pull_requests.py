@@ -40,9 +40,13 @@ class PullRequestsStream(GitHubGraphQLStream):
     def get_child_slices(self) -> list:
         """Return minimal PR metadata for child streams to build slices from.
 
-        Cached after first call. Contains only: repo_owner, repo_name,
-        pr_number, pr_database_id, updated_at, commit_count, comment_count,
-        review_count. ~100 bytes per PR vs ~1-2KB for full records.
+        Intentionally reads ALL PRs (sync_mode=None, no stream_state) because
+        child streams (reviews, comments, pr_commits, file_changes) need the
+        full PR set for slice construction and membership filtering. Called
+        after the parent's incremental sync populates the CDK cache.
+        Results are cached here to avoid redundant reads.
+
+        ~100 bytes per PR vs ~1-2KB for full records.
         """
         if self._child_slice_cache is not None:
             return self._child_slice_cache

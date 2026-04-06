@@ -243,6 +243,18 @@ class CommitsStream(GitHubGraphQLStream):
                 partition_key = f"{owner}/{repo}/{branch}"
                 cursor_value = state.get(partition_key, {}).get(self.cursor_field)
 
+                # Force-push detection: if HEAD changed, the timestamp cursor
+                # is unreliable (rewritten commits may have older dates).
+                # Fall back to start_date so we re-fetch the full branch,
+                # using stop_at_sha for early exit on unchanged commits.
+                head_changed = stored_head and head_sha and head_sha != stored_head
+                if head_changed and cursor_value:
+                    logger.info(
+                        f"HEAD changed on {owner}/{repo}/{branch} "
+                        f"({stored_head[:8]}→{head_sha[:8]}): resetting cursor for re-fetch"
+                    )
+                    cursor_value = None  # will fall back to start_date in _variables()
+
                 yield {
                     "owner": owner,
                     "repo": repo,

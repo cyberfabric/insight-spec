@@ -233,7 +233,7 @@ The connector MUST conform to the Airbyte Python CDK contract: subclass `Abstrac
 | `FileChangesStream` | REST `GET /pulls/{n}/files` + `GET /repos/{o}/{r}/commits/{sha}` | Per-partition incremental (`synced_at` per PR, `seen` per commit) | `PullRequestsStream` (PR files), `CommitsStream` (direct-push files) | `bronze_github.file_changes` |
 | `PullRequestsStream` | GraphQL `BULK_PR_QUERY` (50/page) | Incremental (`updated_at`) | - | `bronze_github.pull_requests` |
 | `PullRequestReviewsStream` | REST `GET /pulls/{n}/reviews` | Full refresh | `PullRequestsStream` | `bronze_github.pull_request_reviews` |
-| `PullRequestCommentsStream` | REST `GET /issues/comments?since=` + `GET /pulls/comments?since=` | Repo-level incremental | - | `bronze_github.pull_request_comments` |
+| `PullRequestCommentsStream` | REST `GET /issues/comments?since=` + `GET /pulls/comments?since=` | Repo-level incremental | `PullRequestsStream` (repo discovery + PR membership filtering) | `bronze_github.pull_request_comments` |
 | `PullRequestCommitsStream` | GraphQL `PR_COMMITS_QUERY` (paginated) | Full refresh | `PullRequestsStream` | `bronze_github.pull_request_commits` |
 
 **Relationships**:
@@ -241,7 +241,7 @@ The connector MUST conform to the Airbyte Python CDK contract: subclass `Abstrac
 - `PullRequestsStream` 1:N -> `FileChangesStream` (PR file changes; PRs provide slices)
 - `CommitsStream` 1:N -> `FileChangesStream` (direct-push file changes; default branch non-merge commits provide slices)
 - `PullRequestsStream` 1:N -> `PullRequestReviewsStream`, `PullRequestCommitsStream` (child streams, PRs provide slices via `get_child_slices()`)
-- `PullRequestCommentsStream` operates at repo level (not a child of PRs)
+- `PullRequestsStream` 1:N -> `PullRequestCommentsStream` (repo-level incremental, but uses PRs parent for repo discovery and PR membership filtering via `get_child_slices()`)
 - Repositories and branches use in-memory atomic cache for child stream reuse
 
 ### 3.2 Component Model
@@ -303,9 +303,10 @@ Shared budget tracker for both REST and GraphQL API calls. Prevents rate limit e
 
 ##### Responsibility scope
 
-- Tracks remaining capacity for REST (`X-RateLimit-Remaining` header) and GraphQL (`rateLimit.remaining` in response body).
-- Triggers proactive backoff when remaining drops below configurable `rate_limit_threshold` (default 200).
-- Computes wait duration from `X-RateLimit-Reset` (REST) or `rateLimit.resetAt` (GraphQL).
+- `throttle(api_type)` — enforces minimum interval between requests per API type.
+- `update_rest(remaining, reset_at)` / `update_graphql(remaining, reset_at_iso)` — updates budget from response headers/body.
+- `wait_if_needed(api_type)` — proactive backoff when remaining drops below configurable `rate_limit_threshold` (default 200). Computes wait from `X-RateLimit-Reset` (REST) or `rateLimit.resetAt` (GraphQL).
+- `on_secondary_limit()` — triggers 60-second cooldown after 502/503 responses.
 
 ##### Responsibility boundaries
 
@@ -324,10 +325,9 @@ Bounded in-flight parallel executor for child stream fetches. Provides slice-lev
 
 ##### Responsibility scope
 
-- Manages a pool of workers (default 5, configurable via `max_workers`).
-- Executes child stream fetches in parallel (e.g., commit files for multiple commits concurrently).
-- Implements slice-level retry (retry a failed slice) and page-level retry (retry a failed page within a slice).
-- Adaptive concurrency: reduces worker count on repeated failures to avoid cascading rate limit exhaustion.
+- `fetch_parallel_with_slices(fn, slices, max_workers)` — bounded thread pool executor; submits up to `max_workers` slices initially, replenishes as each completes. Yields `SliceResult(slice, records, error)` for consumer error handling.
+- `retry_request(fn, context)` — page-level retry with jittered exponential backoff; raises immediately on auth/404 errors, retries on transient/rate-limit errors.
+- Adaptive concurrency: reduces worker count after 3 consecutive errors to avoid cascading rate limit exhaustion.
 
 ##### Responsibility boundaries
 
