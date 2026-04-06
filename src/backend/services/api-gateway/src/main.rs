@@ -16,6 +16,7 @@
 
 // Insight modules (compiled into the binary, registered via inventory).
 mod auth_info;
+mod core_types;
 
 // Link external modules via inventory — runtime discovers them automatically.
 use api_gateway_module as _;
@@ -27,7 +28,6 @@ use oidc_authn_plugin as _;
 use single_tenant_tr_plugin as _;
 use static_authz_plugin as _;
 use tenant_resolver as _;
-use types as _;
 use types_registry as _;
 
 use std::path::PathBuf;

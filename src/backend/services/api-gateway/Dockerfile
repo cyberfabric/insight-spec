@@ -1,7 +1,7 @@
 # Multi-stage build for Insight API Gateway
 #
-# Build context: cf/ (parent directory containing both insight/ and cyberfabric-core/)
-# Usage: cd /path/to/cf && docker build -f insight/src/backend/services/api-gateway/Dockerfile -t insight-api-gateway:dev .
+# Build context: src/backend/
+# Usage: cd src/backend && docker build -f services/api-gateway/Dockerfile -t insight-api-gateway:dev .
 
 # Stage 1: Builder
 FROM rust:1.92-bookworm AS builder
@@ -13,17 +13,15 @@ RUN apt-get update && \
 
 WORKDIR /build
 
-# Copy cyberfabric-core (dependency)
-COPY cyberfabric-core/ ./cyberfabric-core/
+# Copy workspace Cargo files first for layer caching
+COPY Cargo.toml Cargo.lock ./
 
-# Copy insight backend workspace
-COPY insight/src/backend/Cargo.toml insight/src/backend/Cargo.lock ./insight/src/backend/
-COPY insight/src/backend/libs/ ./insight/src/backend/libs/
-COPY insight/src/backend/plugins/ ./insight/src/backend/plugins/
-COPY insight/src/backend/services/api-gateway/ ./insight/src/backend/services/api-gateway/
+# Copy all workspace members
+COPY libs/ ./libs/
+COPY plugins/ ./plugins/
+COPY services/api-gateway/ ./services/api-gateway/
 
 # Build release binary
-WORKDIR /build/insight/src/backend
 RUN cargo build --release --bin insight-api-gateway
 
 # Stage 2: Runtime
@@ -36,10 +34,10 @@ RUN apt-get update && \
 WORKDIR /app
 
 # Copy binary
-COPY --from=builder /build/insight/src/backend/target/release/insight-api-gateway /app/insight-api-gateway
+COPY --from=builder /build/target/release/insight-api-gateway /app/insight-api-gateway
 
 # Copy config
-COPY --from=builder /build/insight/src/backend/services/api-gateway/config/ /app/config/
+COPY --from=builder /build/services/api-gateway/config/ /app/config/
 
 # Create data dir and non-root user
 RUN mkdir -p /app/data && \

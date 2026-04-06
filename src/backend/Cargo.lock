@@ -626,10 +626,10 @@ dependencies = [
  "axum",
  "bytes",
  "cf-authn-resolver-sdk",
- "cf-modkit 0.6.2",
+ "cf-modkit",
  "cf-modkit-http",
- "cf-modkit-macros 0.6.2",
- "cf-modkit-security 0.6.2",
+ "cf-modkit-macros",
+ "cf-modkit-security",
  "chrono",
  "dashmap",
  "governor",
@@ -663,10 +663,10 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cf-authn-resolver-sdk",
- "cf-modkit 0.6.2",
- "cf-modkit-macros 0.6.2",
- "cf-modkit-security 0.6.2",
- "cf-types-registry-sdk 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cf-modkit",
+ "cf-modkit-macros",
+ "cf-modkit-security",
+ "cf-types-registry-sdk",
  "inventory",
  "serde",
  "serde_json",
@@ -683,8 +683,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b5eb6ed76eec6c1a895fd7458982861fa6cd7a36ca02d84299aaf09def667cd"
 dependencies = [
  "async-trait",
- "cf-modkit 0.6.2",
- "cf-modkit-security 0.6.2",
+ "cf-modkit",
+ "cf-modkit-security",
  "gts",
  "gts-macros",
  "schemars",
@@ -704,10 +704,10 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cf-authz-resolver-sdk",
- "cf-modkit 0.6.2",
- "cf-modkit-macros 0.6.2",
- "cf-modkit-security 0.6.2",
- "cf-types-registry-sdk 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cf-modkit",
+ "cf-modkit-macros",
+ "cf-modkit-security",
+ "cf-types-registry-sdk",
  "inventory",
  "serde",
  "serde_json",
@@ -724,8 +724,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "172fec6d092b8472dc6af5c942d8690b4b9b6d4abdb856cb2bb626ae3e29f726"
 dependencies = [
  "async-trait",
- "cf-modkit 0.6.2",
- "cf-modkit-security 0.6.2",
+ "cf-modkit",
+ "cf-modkit-security",
  "gts",
  "gts-macros",
  "schemars",
@@ -745,9 +745,9 @@ checksum = "d9299804198999d44aa5951a3cea45ce67c349a77d54c3b39564173fb19b1a34"
 dependencies = [
  "anyhow",
  "async-trait",
- "cf-modkit 0.6.2",
+ "cf-modkit",
  "cf-modkit-transport-grpc",
- "cf-system-sdks 0.1.33",
+ "cf-system-sdks",
  "http",
  "inventory",
  "parking_lot",
@@ -763,52 +763,6 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit"
-version = "0.6.1"
-dependencies = [
- "anyhow",
- "arc-swap",
- "async-trait",
- "axum",
- "cf-modkit-db 0.6.1",
- "cf-modkit-errors 0.6.1",
- "cf-modkit-macros 0.6.1",
- "cf-modkit-odata 0.6.1",
- "cf-modkit-sdk 0.6.1",
- "cf-modkit-utils 0.6.1",
- "cf-system-sdks 0.1.32",
- "dashmap",
- "figment",
- "futures-core",
- "futures-util",
- "gts",
- "gts-macros",
- "http",
- "inventory",
- "nix",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "parking_lot",
- "schemars",
- "sea-orm-migration",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tonic",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "urlencoding",
- "utoipa",
- "uuid",
- "zip",
-]
-
-[[package]]
-name = "cf-modkit"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6ecd43f8f1b12998d606590d0079ff1058b1bbb8643fd44ff789b53daac0357"
@@ -817,13 +771,13 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "axum",
- "cf-modkit-db 0.7.0",
- "cf-modkit-errors 0.6.2",
- "cf-modkit-macros 0.6.2",
- "cf-modkit-odata 0.6.2",
- "cf-modkit-sdk 0.6.2",
- "cf-modkit-utils 0.6.2",
- "cf-system-sdks 0.1.33",
+ "cf-modkit-db",
+ "cf-modkit-errors",
+ "cf-modkit-macros",
+ "cf-modkit-odata",
+ "cf-modkit-sdk",
+ "cf-modkit-utils",
+ "cf-system-sdks",
  "chrono",
  "dashmap",
  "dsn",
@@ -876,8 +830,8 @@ dependencies = [
  "async-trait",
  "base64",
  "cf-modkit-http",
- "cf-modkit-security 0.6.2",
- "cf-modkit-utils 0.6.2",
+ "cf-modkit-security",
+ "cf-modkit-utils",
  "http",
  "jsonwebtoken",
  "serde",
@@ -895,36 +849,6 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-db"
-version = "0.6.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "bigdecimal",
- "cf-modkit-db-macros 0.6.1",
- "cf-modkit-odata 0.6.1",
- "cf-modkit-security 0.6.1",
- "cf-modkit-utils 0.6.1",
- "chrono",
- "dashmap",
- "dirs",
- "figment",
- "rust_decimal",
- "ryu",
- "sea-orm",
- "sea-orm-migration",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "time",
- "tokio",
- "tracing",
- "url",
- "uuid",
- "xxhash-rust",
-]
-
-[[package]]
-name = "cf-modkit-db"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86e6a22d08a9b4eb2af68a5b407c6f350e71460c6f307f6340ddd38d2dac1e10"
@@ -932,10 +856,10 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bigdecimal",
- "cf-modkit-db-macros 0.6.2",
- "cf-modkit-odata 0.6.2",
- "cf-modkit-security 0.6.2",
- "cf-modkit-utils 0.6.2",
+ "cf-modkit-db-macros",
+ "cf-modkit-odata",
+ "cf-modkit-security",
+ "cf-modkit-utils",
  "chrono",
  "dashmap",
  "dirs",
@@ -953,17 +877,6 @@ dependencies = [
  "url",
  "uuid",
  "xxhash-rust",
-]
-
-[[package]]
-name = "cf-modkit-db-macros"
-version = "0.6.1"
-dependencies = [
- "heck 0.5.0",
- "proc-macro-error2",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -981,17 +894,6 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-errors"
-version = "0.6.1"
-dependencies = [
- "axum",
- "http",
- "serde",
- "tracing",
- "utoipa",
-]
-
-[[package]]
-name = "cf-modkit-errors"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b02d4c8a5551afe3a667da6d120c25a17f4eb6be96777f81baf01b96cf81e86f"
@@ -1001,17 +903,6 @@ dependencies = [
  "serde",
  "tracing",
  "utoipa",
-]
-
-[[package]]
-name = "cf-modkit-errors-macro"
-version = "0.6.1"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde",
- "serde_json",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -1058,17 +949,6 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-macros"
-version = "0.6.1"
-dependencies = [
- "heck 0.5.0",
- "proc-macro2",
- "quote",
- "strsim",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "cf-modkit-macros"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e793c53aaab524fef22443b6e2568d6ba7aee892acabf85451decf517899025"
@@ -1082,34 +962,14 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-odata"
-version = "0.6.1"
-dependencies = [
- "base64",
- "bigdecimal",
- "cf-modkit-errors 0.6.1",
- "cf-modkit-errors-macro 0.6.1",
- "chrono",
- "chrono-tz",
- "hex",
- "http",
- "peg",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "cf-modkit-odata"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67e82c56a885ac7f037a4adb43eb86b01068cb2ea525eeb3e360d16c28ac8be3"
 dependencies = [
  "base64",
  "bigdecimal",
- "cf-modkit-errors 0.6.2",
- "cf-modkit-errors-macro 0.6.2",
+ "cf-modkit-errors",
+ "cf-modkit-errors-macro",
  "chrono",
  "chrono-tz",
  "hex",
@@ -1120,16 +980,6 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "uuid",
-]
-
-[[package]]
-name = "cf-modkit-sdk"
-version = "0.6.1"
-dependencies = [
- "cf-modkit-odata 0.6.1",
- "cf-modkit-security 0.6.1",
- "futures-core",
- "pin-project-lite",
 ]
 
 [[package]]
@@ -1138,22 +988,10 @@ version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6cd3c02b75954a0eba2b786bf5646ce468322cbe8cf56c355e2bccb8669af14a"
 dependencies = [
- "cf-modkit-odata 0.6.2",
- "cf-modkit-security 0.6.2",
+ "cf-modkit-odata",
+ "cf-modkit-security",
  "futures-core",
  "pin-project-lite",
-]
-
-[[package]]
-name = "cf-modkit-security"
-version = "0.6.1"
-dependencies = [
- "anyhow",
- "postcard",
- "secrecy",
- "serde",
- "thiserror 2.0.18",
- "uuid",
 ]
 
 [[package]]
@@ -1177,24 +1015,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d40fd7b83fa848c17b69c0c332d0c3b95587cb15ba9835086922c09bb2a0834"
 dependencies = [
  "anyhow",
- "cf-modkit-security 0.6.2",
+ "cf-modkit-security",
  "rand 0.9.2",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "tonic",
  "tracing",
-]
-
-[[package]]
-name = "cf-modkit-utils"
-version = "0.6.1"
-dependencies = [
- "humantime",
- "regex",
- "secrecy",
- "serde",
- "zeroize",
 ]
 
 [[package]]
@@ -1219,9 +1046,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "cf-modkit 0.6.2",
- "cf-modkit-macros 0.6.2",
- "cf-system-sdks 0.1.33",
+ "cf-modkit",
+ "cf-modkit-macros",
+ "cf-system-sdks",
  "inventory",
  "parking_lot",
  "serde",
@@ -1241,12 +1068,12 @@ checksum = "59e9642abc79d4f49bfaff822d8e0160b772e21815316bfad3042f145d3494e6"
 dependencies = [
  "anyhow",
  "async-trait",
- "cf-modkit 0.6.2",
- "cf-modkit-macros 0.6.2",
- "cf-modkit-odata 0.6.2",
- "cf-modkit-security 0.6.2",
+ "cf-modkit",
+ "cf-modkit-macros",
+ "cf-modkit-odata",
+ "cf-modkit-security",
  "cf-tenant-resolver-sdk",
- "cf-types-registry-sdk 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cf-types-registry-sdk",
  "inventory",
  "serde",
  "serde_json",
@@ -1263,23 +1090,15 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cf-authz-resolver-sdk",
- "cf-modkit 0.6.2",
- "cf-modkit-macros 0.6.2",
- "cf-modkit-security 0.6.2",
- "cf-types-registry-sdk 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cf-modkit",
+ "cf-modkit-macros",
+ "cf-modkit-security",
+ "cf-types-registry-sdk",
  "inventory",
  "serde",
  "serde_json",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "cf-system-sdk-directory"
-version = "0.1.32"
-dependencies = [
- "anyhow",
- "async-trait",
 ]
 
 [[package]]
@@ -1300,18 +1119,11 @@ dependencies = [
 
 [[package]]
 name = "cf-system-sdks"
-version = "0.1.32"
-dependencies = [
- "cf-system-sdk-directory 0.1.32",
-]
-
-[[package]]
-name = "cf-system-sdks"
 version = "0.1.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a354b73fca5d813440a738baccd8b23f0d5f9d429588798904a53cab68fe0673"
 dependencies = [
- "cf-system-sdk-directory 0.1.33",
+ "cf-system-sdk-directory",
 ]
 
 [[package]]
@@ -1322,12 +1134,12 @@ checksum = "49c3be5470d5e662d3bb22f73a88ab711a15dddbaf120a95886cc0b8c81662cd"
 dependencies = [
  "anyhow",
  "async-trait",
- "cf-modkit 0.6.2",
- "cf-modkit-macros 0.6.2",
- "cf-modkit-odata 0.6.2",
- "cf-modkit-security 0.6.2",
+ "cf-modkit",
+ "cf-modkit-macros",
+ "cf-modkit-odata",
+ "cf-modkit-security",
  "cf-tenant-resolver-sdk",
- "cf-types-registry-sdk 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cf-types-registry-sdk",
  "inventory",
  "serde",
  "serde_json",
@@ -1344,9 +1156,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf5db767d729ce7ae0012328df0f1c008003b9669d67fcbaa96b18a04d5176dd"
 dependencies = [
  "async-trait",
- "cf-modkit 0.6.2",
- "cf-modkit-odata 0.6.2",
- "cf-modkit-security 0.6.2",
+ "cf-modkit",
+ "cf-modkit-odata",
+ "cf-modkit-security",
  "gts",
  "gts-macros",
  "schemars",
@@ -1365,9 +1177,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "cf-modkit 0.6.2",
- "cf-modkit-macros 0.6.2",
- "cf-types-registry-sdk 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cf-modkit",
+ "cf-modkit-macros",
+ "cf-types-registry-sdk",
  "gts",
  "inventory",
  "parking_lot",
@@ -1377,17 +1189,6 @@ dependencies = [
  "tokio",
  "tracing",
  "utoipa",
- "uuid",
-]
-
-[[package]]
-name = "cf-types-registry-sdk"
-version = "0.1.5"
-dependencies = [
- "async-trait",
- "gts",
- "serde_json",
- "thiserror 2.0.18",
  "uuid",
 ]
 
@@ -2740,14 +2541,15 @@ dependencies = [
  "cf-authn-resolver",
  "cf-authz-resolver",
  "cf-grpc-hub",
- "cf-modkit 0.6.2",
- "cf-modkit-macros 0.6.2",
- "cf-modkit-security 0.6.2",
+ "cf-modkit",
+ "cf-modkit-macros",
+ "cf-modkit-security",
  "cf-module-orchestrator",
  "cf-single-tenant-tr-plugin",
  "cf-static-authz-plugin",
  "cf-tenant-resolver",
  "cf-types-registry",
+ "cf-types-registry-sdk",
  "clap",
  "oidc-authn-plugin",
  "serde",
@@ -2755,7 +2557,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "types",
 ]
 
 [[package]]
@@ -3245,12 +3046,12 @@ dependencies = [
  "anyhow",
  "async-trait",
  "cf-authn-resolver-sdk",
- "cf-modkit 0.6.2",
+ "cf-modkit",
  "cf-modkit-auth",
  "cf-modkit-http",
- "cf-modkit-macros 0.6.2",
- "cf-modkit-security 0.6.2",
- "cf-types-registry-sdk 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cf-modkit-macros",
+ "cf-modkit-security",
+ "cf-types-registry-sdk",
  "secrecy",
  "serde",
  "serde_json",
@@ -5605,34 +5406,6 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
-
-[[package]]
-name = "types"
-version = "0.6.1"
-dependencies = [
- "anyhow",
- "arc-swap",
- "async-trait",
- "cf-modkit 0.6.1",
- "cf-modkit-macros 0.6.1",
- "cf-modkit-security 0.6.1",
- "cf-types-registry-sdk 0.1.5",
- "inventory",
- "tracing",
- "types-sdk",
-]
-
-[[package]]
-name = "types-sdk"
-version = "0.6.1"
-dependencies = [
- "async-trait",
- "cf-modkit-odata 0.6.1",
- "cf-modkit-security 0.6.1",
- "thiserror 2.0.18",
- "time",
- "uuid",
-]
 
 [[package]]
 name = "uncased"

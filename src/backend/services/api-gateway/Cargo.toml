@@ -27,7 +27,7 @@ tenant-resolver = { workspace = true }
 grpc-hub = { workspace = true }
 module-orchestrator = { workspace = true }
 types-registry = { workspace = true }
-types = { workspace = true }
+types-registry-sdk = { workspace = true }
 
 # Plugins
 static-authz-plugin = { workspace = true }

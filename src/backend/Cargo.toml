@@ -76,6 +76,3 @@ single-tenant-tr-plugin = { package = "cf-single-tenant-tr-plugin", version = "0
 grpc-hub = { package = "cf-grpc-hub", version = "0.1.18" }
 module-orchestrator = { package = "cf-module-orchestrator", version = "0.1.18" }
 types-registry = { package = "cf-types-registry", version = "0.1.17" }
-
-# Not published to crates.io — path dep to local cyberfabric-core checkout
-types = { path = "../../../cyberfabric-core/modules/system/types" }
