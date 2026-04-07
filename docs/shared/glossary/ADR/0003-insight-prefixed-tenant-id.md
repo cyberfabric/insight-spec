@@ -55,10 +55,12 @@ Chosen option: "`insight_tenant_id` (prefixed)", because it eliminates name coll
 
 ### Confirmation
 
+Post-migration target state (existing violations documented in [Known Convention Violations](../README.md#15-known-convention-violations)):
+
 * All MariaDB `CREATE TABLE` statements use `insight_tenant_id`, not `tenant_id`
 * All ClickHouse table definitions use `insight_tenant_id`
 * All Redpanda message schemas include `insight_tenant_id`
-* Code search: `grep -r "tenant_id" --include="*.rs" --include="*.sql" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.toml"` should return only `insight_tenant_id` (no bare `tenant_id`)
+* Code search: `grep -r "tenant_id" --include="*.rs" --include="*.sql" --include="*.yml" --include="*.yaml" --include="*.md" --include="*.toml"` will return only `insight_tenant_id` (no bare `tenant_id`) after migration of existing code and specs is complete
 * Connector config fields: `insight_tenant_id` in `connection_specification`, `azure_tenant_id` for Azure -- no collision
 
 ## Pros and Cons of the Options
