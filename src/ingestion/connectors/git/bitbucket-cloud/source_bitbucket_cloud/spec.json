@@ -19,18 +19,12 @@
         "description": "Stable identifier for this connector instance (e.g., bitbucket-cloud-acme-prod).",
         "order": 1
       },
-      "username": {
-        "type": "string",
-        "title": "Username",
-        "description": "Bitbucket username for App Password authentication. Leave empty for OAuth Bearer token auth.",
-        "order": 2
-      },
       "token": {
         "type": "string",
-        "title": "Token / App Password",
-        "description": "Bitbucket App Password (used with username) or OAuth Bearer token.",
+        "title": "API Token",
+        "description": "Bitbucket Cloud API token with scopes (Repository: Read, Pull requests: Read). Created at Settings > API tokens.",
         "airbyte_secret": true,
-        "order": 3
+        "order": 2
       },
       "workspaces": {
         "type": "array",

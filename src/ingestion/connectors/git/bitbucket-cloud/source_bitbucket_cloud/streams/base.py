@@ -80,7 +80,6 @@ class BitbucketCloudRestStream(HttpStream, ABC):
 
     def __init__(
         self,
-        username: str | None,
         token: str,
         tenant_id: str,
         source_id: str,
@@ -88,14 +87,13 @@ class BitbucketCloudRestStream(HttpStream, ABC):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self._username = username
         self._token = token
         self._tenant_id = tenant_id
         self._source_id = source_id
         self._rate_limiter = rate_limiter
 
     def request_headers(self, **kwargs) -> Mapping[str, Any]:
-        return rest_headers(self._username, self._token)
+        return rest_headers(self._token)
 
     def request_params(self, **kwargs) -> MutableMapping[str, Any]:
         return {"pagelen": "100"}

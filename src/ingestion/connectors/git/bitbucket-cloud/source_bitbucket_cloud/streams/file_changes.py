@@ -179,7 +179,7 @@ class FileChangesStream(BitbucketCloudRestStream):
         """REST GET with page-level retry for retriable errors. Thread-safe."""
         def _call():
             self._rate_limiter.wait_if_needed("rest")
-            resp = req.get(url, headers=rest_headers(self._username, self._token), params=params, timeout=30)
+            resp = req.get(url, headers=rest_headers(self._token), params=params, timeout=30)
             remaining = resp.headers.get("X-RateLimit-Remaining")
             reset = resp.headers.get("X-RateLimit-Reset")
             if remaining and reset:
