@@ -127,9 +127,9 @@ Insight connects to 10+ external platforms, each contributing partial person dat
 ### 3.1 Module-Specific Environment Constraints
 
 - **Storage**: All person domain tables reside in ClickHouse. No separate RDBMS.
-- **Shared input**: Person-attribute observations are read from the `bootstrap_inputs` table (owned by IR domain). The Person domain filters by `alias_type` values corresponding to person attributes (`display_name`, `role`, `location`, etc.).
-- **SCD history**: SCD Type 2/Type 3 history for the `persons` table is managed by dbt macros producing `persons_snapshot` and `persons_fields_history` tables. This domain defines the source `persons` table; dbt owns the derived snapshot schemas.
-- **Naming**: All tables and columns follow PR #55 glossary conventions.
+- **Shared input**: Person-attribute observations originate from the `bootstrap_inputs` table owned by the Identity Resolution domain.
+- **SCD history**: Historical versions of person records are managed by dbt macros (SCD Type 2 / Type 3). This domain defines the current-state table; history schemas are out of scope.
+- **Naming**: All tables and columns follow the shared glossary conventions.
 
 ---
 
@@ -172,7 +172,7 @@ The system **MUST** create person records in the `persons` table from HR Bronze 
 
 **Rationale**: The person record is the foundation for all cross-domain references. Without it, the IR domain cannot link aliases and analytics cannot attribute activity.
 
-**Actors**: `cpt-person-actor-analytics-pipeline`
+**Actors**: `cpt-person-actor-hr-connector`
 
 #### Track Source Contributions
 

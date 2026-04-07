@@ -67,7 +67,7 @@ This domain is deliberately thin: it stores org structure and person-to-org link
 
 - [ ] `p3` - **ID**: `cpt-orgchart-tech-layers`
 
-```
+```text
 ┌───────────────────────────────────────────────────────────────────┐
 │                        ORG-CHART DOMAIN                            │
 ├───────────────────────────────────────────────────────────────────┤
@@ -103,7 +103,7 @@ This domain is deliberately thin: it stores org structure and person-to-org link
 |---|---|---|
 | Ingestion | Read org hierarchy and assignment data from HR connectors via dbt or bootstrap_inputs | ClickHouse / dbt |
 | Processing | HierarchyManager manages org unit lifecycle; AssignmentTracker manages temporal assignments | Python / dbt macros |
-| Storage | Org units and person assignments with temporal semantics | ClickHouse (ReplacingMergeTree, MergeTree) |
+| Storage | Org units and person assignments with temporal semantics | ClickHouse (ReplacingMergeTree) |
 | API | REST endpoints for org unit CRUD, assignment queries, hierarchy traversal | Python (FastAPI) |
 | Cross-domain | `person_assignments.person_id` → `persons.id`; `persons.org_unit_id` → `org_units.id` | Logical FK |
 
@@ -194,7 +194,7 @@ SCD Type 2 history for `org_units` and `person_assignments` is managed by dbt ma
 
 ### 3.2 Component Model
 
-```
+```text
 ┌───────────────────────────────────────────────────────────┐
 │                    Org-Chart Domain                         │
 │                                                            │
@@ -341,7 +341,7 @@ REST API layer for org unit management, assignment queries, and hierarchy traver
 
 | Aspect | Value |
 |---|---|
-| Engine | ReplacingMergeTree for `org_units`; MergeTree for `person_assignments` |
+| Engine | ReplacingMergeTree for both `org_units` and `person_assignments` |
 | Version | 24.x+ (for `generateUUIDv7()` support) |
 | Access | Direct read/write from OrgChartService, HierarchyManager, AssignmentTracker |
 
@@ -372,7 +372,7 @@ sequenceDiagram
     API ->> AT: transfer(person_id, org_unit, new_unit, effective_from)
     AT ->> PA: SELECT current assignment WHERE person_id=? AND assignment_type='org_unit' AND effective_to='1970-01-01'
     PA -->> AT: {id: old_assign, org_unit_id: old_unit, effective_from: 2024-06-01}
-    AT ->> PA: INSERT (old_assign updated) SET effective_to = '2026-01-01'
+    AT ->> PA: INSERT old_assign copy with effective_to='2026-01-01', updated_at=now() (ReplacingMergeTree dedup closes old row)
     AT ->> PA: INSERT new assignment {person_id, org_unit, new_unit, effective_from: 2026-01-01, effective_to: '1970-01-01'}
     AT -->> API: {status: transferred, old_assignment_id, new_assignment_id}
     API -->> Op: 200 OK
@@ -470,12 +470,15 @@ Temporal assignment linking a person to an org unit, role, team, manager, or oth
 | `insight_source_id` | `UUID` | Source system that provided this assignment |
 | `insight_source_type` | `LowCardinality(String)` | Source type (e.g., `bamboohr`, `workday`, `manual`) |
 | `created_at` | `DateTime64(3, 'UTC')` | Row creation time |
+| `updated_at` | `DateTime64(3, 'UTC')` | Last modification time (used by ReplacingMergeTree for dedup) |
 
 **PK**: `id`
 
 **ORDER BY**: `(insight_tenant_id, person_id, assignment_type, effective_from, id)`
 
-**Engine**: `MergeTree`
+**Engine**: `ReplacingMergeTree(updated_at)`
+
+**Close-and-insert pattern**: To close an assignment (set `effective_to`), INSERT a new version of the same row with the `effective_to` value set and a newer `updated_at`. ClickHouse background merges will deduplicate by ORDER BY key, keeping the row with the latest `updated_at`. Reads MUST use `FINAL` modifier or `argMax(effective_to, updated_at)` to see the deduplicated state before background merge completes.
 
 **Current state query**: `WHERE person_id = ? AND effective_to = '1970-01-01'`
 
@@ -506,12 +509,12 @@ The main tables (`org_units`, `person_assignments`) store current state plus rec
 **Current state** (most common): Filter on sentinel `effective_to = '1970-01-01'`.
 
 **Point-in-time** (historical attribution): Use half-open interval check:
-```
+```sql
 effective_from <= target_date AND (effective_to = '1970-01-01' OR effective_to > target_date)
 ```
 
 **Join facts by event date** (correct team attribution through transfers):
-```
+```sql
 Join person_assignments ON event.person_id = pa.person_id
   AND event.event_date >= pa.effective_from
   AND (pa.effective_to = '1970-01-01' OR event.event_date < pa.effective_to)

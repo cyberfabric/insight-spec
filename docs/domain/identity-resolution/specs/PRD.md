@@ -27,6 +27,11 @@
   - [7.1 Public API Surface](#71-public-api-surface)
   - [7.2 External Integration Contracts](#72-external-integration-contracts)
 - [8. Use Cases](#8-use-cases)
+  - [Bootstrap New Connector Data](#bootstrap-new-connector-data)
+  - [Resolve Alias (Hot Path)](#resolve-alias-hot-path)
+  - [Review Unmapped Aliases](#review-unmapped-aliases)
+  - [Merge Two Person Alias Sets](#merge-two-person-alias-sets)
+  - [GDPR Alias Purge](#gdpr-alias-purge)
 - [9. Acceptance Criteria](#9-acceptance-criteria)
 - [10. Dependencies](#10-dependencies)
 - [11. Assumptions](#11-assumptions)
@@ -548,7 +553,7 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 
 ## 8. Use Cases
 
-#### Bootstrap New Connector Data
+### Bootstrap New Connector Data
 
 - [ ] `p1` - **ID**: `cpt-ir-usecase-bootstrap`
 
@@ -581,7 +586,7 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 
 ---
 
-#### Resolve Alias (Hot Path)
+### Resolve Alias (Hot Path)
 
 - [ ] `p1` - **ID**: `cpt-ir-usecase-resolve-hot`
 
@@ -604,7 +609,7 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 
 ---
 
-#### Review Unmapped Aliases
+### Review Unmapped Aliases
 
 - [ ] `p2` - **ID**: `cpt-ir-usecase-review-unmapped`
 
@@ -630,7 +635,7 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 
 ---
 
-#### Merge Two Person Alias Sets
+### Merge Two Person Alias Sets
 
 - [ ] `p3` - **ID**: `cpt-ir-usecase-merge`
 
@@ -659,7 +664,7 @@ Every merge operation **MUST** be fully reversible via split. After a merge-then
 
 ---
 
-#### GDPR Alias Purge
+### GDPR Alias Purge
 
 - [ ] `p3` - **ID**: `cpt-ir-usecase-gdpr-purge`
 

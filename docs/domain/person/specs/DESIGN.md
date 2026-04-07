@@ -68,7 +68,7 @@ The architecture is ClickHouse-native, matching the project-wide decision. The `
 
 - [ ] `p3` - **ID**: `cpt-person-tech-layers`
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │                          PERSON DOMAIN                                │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -80,11 +80,8 @@ The architecture is ClickHouse-native, matching the project-wide decision. The `
 │  │ bootstrap_inputs  │    │     persons        │──── Gold dashboards  │
 │  │ (IR domain, shared)│──▶│  (golden record)   │                      │
 │  └──────────────────┘    └───────────────────┘                       │
-│         │                        │                                    │
-│         │                 ┌──────▼──────┐                            │
-│         │                 │person_source │                            │
-│         │                 │_contributions│                            │
-│         │                 └─────────────┘                            │
+│         │                   (history via dbt                          │
+│         │                    SCD2/SCD3 macros)                        │
 │         │                                                             │
 │         │                 ┌──────────────────┐                       │
 │         └────────────────▶│person_availability│                       │
@@ -201,7 +198,7 @@ SCD Type 2/Type 3 history for the `persons` table is managed by dbt macros produ
 
 ### 3.2 Component Model
 
-```
+```text
 ┌───────────────────────────────────────────────────────────┐
 │                     Person Domain                          │
 │                                                            │
@@ -388,7 +385,7 @@ sequenceDiagram
             GRB ->> P: UPDATE persons (golden record fields, *_source columns, completeness_score, conflict_status=clean)
         else Some attributes in conflict
             GRB ->> CD: detect(person_id)
-            CD ->> PC: INSERT person_conflict (attribute, source_a, value_a, source_b, value_b)
+            CD ->> PC: INSERT person_conflicts (attribute, source_a, value_a, source_b, value_b)
             CD -->> GRB: conflict flags
             GRB ->> P: UPDATE persons (golden record fields, conflict_status=needs_review)
         end
