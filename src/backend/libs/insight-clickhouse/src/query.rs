@@ -17,10 +17,10 @@ use crate::{Client, Error};
 ///
 /// ```rust,ignore
 /// let rows: Vec<Metric> = client
-///     .tenant_query("gold.pr_cycle_time", tenant_id)
-///     .filter_uuid("org_unit_id = ?", org_unit_id)
-///     .filter_str("metric_date >= ?", "2026-01-01")
-///     .order_by("metric_date DESC")
+///     .tenant_query("gold.pr_cycle_time", tenant_id)?
+///     .filter("org_unit_id = ?", org_unit_id)?
+///     .filter("metric_date >= ?", "2026-01-01")?
+///     .order_by("metric_date DESC")?
 ///     .limit(100)
 ///     .fetch_all()
 ///     .await?;
@@ -30,37 +30,44 @@ pub struct QueryBuilder {
     table: String,
     tenant_id: Uuid,
     filters: Vec<String>,
-    bind_values: Vec<BindValue>,
+    bind_values: Vec<serde_json::Value>,
     order_by: Option<String>,
     limit: Option<u64>,
     offset: Option<u64>,
     select: Option<String>,
 }
 
-/// Internal enum for bind values.
-/// The `clickhouse` crate uses typed `.bind()`, so we store them
-/// and apply in order during query construction.
-enum BindValue {
-    Uuid(Uuid),
-    String(String),
-    I64(i64),
-    F64(f64),
+impl core::fmt::Debug for QueryBuilder {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("QueryBuilder")
+            .field("table", &self.table)
+            .field("tenant_id", &self.tenant_id)
+            .field("filters", &self.filters)
+            .field("bind_values_count", &self.bind_values.len())
+            .field("order_by", &self.order_by)
+            .field("limit", &self.limit)
+            .field("offset", &self.offset)
+            .field("select", &self.select)
+            .field("client", &"<Client>")
+            .finish()
+    }
 }
 
 impl QueryBuilder {
-    /// # Panics
+    /// Creates a new query builder for the given table and tenant.
     ///
-    /// Panics if `table` contains characters other than alphanumeric, `_`, or `.`.
-    pub(crate) fn new(client: Client, table: &str, tenant_id: Uuid) -> Self {
-        assert!(
-            !table.is_empty()
-                && table
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.'),
-            "table name must be non-empty and contain only alphanumeric, '_', or '.' characters, \
-             got: {table}"
-        );
-        Self {
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidQuery`] if `table` contains unsafe characters.
+    pub(crate) fn new(client: Client, table: &str, tenant_id: Uuid) -> Result<Self, Error> {
+        if !is_safe_identifier(table) {
+            tracing::warn!(table = %table, "rejected unsafe table name");
+            return Err(Error::InvalidQuery(format!(
+                "table name must be non-empty and contain only alphanumeric, '_', or '.' characters, \
+                 got: {table}"
+            )));
+        }
+        Ok(Self {
             client,
             table: table.to_owned(),
             tenant_id,
@@ -70,72 +77,70 @@ impl QueryBuilder {
             limit: None,
             offset: None,
             select: None,
-        }
+        })
     }
 
-    /// Adds a UUID filter condition. The condition **must** contain exactly one `?` placeholder.
+    /// Adds a filter condition with a serializable value.
     ///
-    /// Appended as `AND ({condition})` after the automatic `tenant_id` filter.
-    /// Parentheses prevent SQL precedence from bypassing tenant isolation.
+    /// The condition **must** contain exactly one `?` placeholder and only
+    /// safe SQL characters (identifiers, operators, parentheses for `IN(?)`).
     ///
-    /// # Panics
+    /// Accepts any type that implements `Serialize`: UUID, String, integers,
+    /// floats, dates, booleans, etc.
     ///
-    /// Panics if `condition` does not contain exactly one `?` placeholder.
-    #[must_use]
-    pub fn filter_uuid(self, condition: &str, value: Uuid) -> Self {
-        self.push_filter(condition, BindValue::Uuid(value))
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidQuery`] if the condition has wrong placeholder
+    /// count, contains unsafe characters, or the value cannot be serialized.
+    pub fn filter(self, condition: &str, value: impl serde::Serialize) -> Result<Self, Error> {
+        let json_value = serde_json::to_value(value).map_err(|e| {
+            tracing::warn!(error = %e, "failed to serialize filter value");
+            Error::InvalidQuery(format!("failed to serialize filter value: {e}"))
+        })?;
+        self.push_filter(condition, json_value)
     }
 
-    /// Adds a string filter condition. Must contain exactly one `?`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `condition` does not contain exactly one `?` placeholder.
-    #[must_use]
-    pub fn filter_str(self, condition: &str, value: impl Into<String>) -> Self {
-        self.push_filter(condition, BindValue::String(value.into()))
-    }
-
-    /// Adds an integer filter condition. Must contain exactly one `?`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `condition` does not contain exactly one `?` placeholder.
-    #[must_use]
-    pub fn filter_i64(self, condition: &str, value: i64) -> Self {
-        self.push_filter(condition, BindValue::I64(value))
-    }
-
-    /// Adds a float filter condition. Must contain exactly one `?`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `condition` does not contain exactly one `?` placeholder.
-    #[must_use]
-    pub fn filter_f64(self, condition: &str, value: f64) -> Self {
-        self.push_filter(condition, BindValue::F64(value))
-    }
-
-    /// Validates that the condition has exactly one `?`, wraps in parentheses,
-    /// and pushes the filter + bind value.
-    fn push_filter(mut self, condition: &str, value: BindValue) -> Self {
+    fn push_filter(mut self, condition: &str, value: serde_json::Value) -> Result<Self, Error> {
         let placeholder_count = condition.matches('?').count();
-        assert!(
-            placeholder_count == 1,
-            "filter condition must contain exactly one '?' placeholder, \
-             got {placeholder_count} in: {condition}"
-        );
+        if placeholder_count != 1 {
+            tracing::warn!(
+                condition = %condition,
+                placeholder_count,
+                "filter condition must have exactly one '?' placeholder"
+            );
+            return Err(Error::InvalidQuery(format!(
+                "filter condition must contain exactly one '?' placeholder, \
+                 got {placeholder_count} in: {condition}"
+            )));
+        }
+        if !validate_filter_condition(condition) {
+            tracing::warn!(condition = %condition, "filter condition contains unsafe characters");
+            return Err(Error::InvalidQuery(format!(
+                "filter condition contains unsafe characters: {condition}"
+            )));
+        }
         self.filters.push(format!("({condition})"));
         self.bind_values.push(value);
-        self
+        Ok(self)
     }
 
-    /// Sets the ORDER BY clause. Value is used as-is (column names only,
-    /// no user input).
-    #[must_use]
-    pub fn order_by(mut self, clause: &str) -> Self {
+    /// Sets the ORDER BY clause.
+    ///
+    /// Accepts comma-separated column references with optional `ASC`/`DESC`.
+    /// Example: `"metric_date DESC, person_id ASC"`
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidQuery`] if the clause contains unsafe characters.
+    pub fn order_by(mut self, clause: &str) -> Result<Self, Error> {
+        if !validate_order_by(clause) {
+            tracing::warn!(clause = %clause, "order_by clause contains unsafe characters");
+            return Err(Error::InvalidQuery(format!(
+                "order_by clause contains unsafe characters: {clause}"
+            )));
+        }
         self.order_by = Some(clause.to_owned());
-        self
+        Ok(self)
     }
 
     /// Sets the LIMIT.
@@ -153,10 +158,22 @@ impl QueryBuilder {
     }
 
     /// Sets the SELECT columns. Default is `*`.
-    #[must_use]
-    pub fn select(mut self, columns: &str) -> Self {
+    ///
+    /// Accepts comma-separated column names.
+    /// Example: `"person_id, avg_hours, metric_date"`
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidQuery`] if any column name contains unsafe characters.
+    pub fn select(mut self, columns: &str) -> Result<Self, Error> {
+        if !validate_select(columns) {
+            tracing::warn!(columns = %columns, "select columns contain unsafe characters");
+            return Err(Error::InvalidQuery(format!(
+                "select columns contain unsafe characters: {columns}"
+            )));
+        }
         self.select = Some(columns.to_owned());
-        self
+        Ok(self)
     }
 
     /// Builds the SQL string (for debugging). Values are shown as `?`.
@@ -205,17 +222,68 @@ impl QueryBuilder {
 
         // Bind additional filter values in order
         for value in self.bind_values {
-            query = match value {
-                BindValue::Uuid(v) => query.bind(v),
-                BindValue::String(v) => query.bind(v.as_str()),
-                BindValue::I64(v) => query.bind(v),
-                BindValue::F64(v) => query.bind(v),
-            };
+            query = query.bind(value);
         }
 
         let rows = query.fetch_all().await?;
         Ok(rows)
     }
+}
+
+/// Validates a SELECT column list. Allows: alphanumeric, `_`, `.`, `,`, `*`, spaces.
+fn validate_select(columns: &str) -> bool {
+    !columns.is_empty()
+        && columns
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | ',' | '*' | ' '))
+}
+
+/// Validates an ORDER BY clause. Each part must be `column [ASC|DESC]`.
+fn validate_order_by(clause: &str) -> bool {
+    if clause.is_empty() {
+        return false;
+    }
+    clause.split(',').all(|part| {
+        let tokens: Vec<&str> = part.split_whitespace().collect();
+        match tokens.len() {
+            1 => is_safe_identifier(tokens[0]),
+            2 => {
+                is_safe_identifier(tokens[0])
+                    && matches!(
+                        tokens[1].to_ascii_uppercase().as_str(),
+                        "ASC" | "DESC"
+                    )
+            }
+            _ => false,
+        }
+    })
+}
+
+/// Validates a filter condition fragment.
+/// Rejects: comments (`--`, `/*`), semicolons, quotes.
+fn validate_filter_condition(condition: &str) -> bool {
+    if condition.is_empty() {
+        return false;
+    }
+    if condition.contains("--") || condition.contains("/*") || condition.contains(';') {
+        return false;
+    }
+    if condition.contains('\'') || condition.contains('"') {
+        return false;
+    }
+    condition.chars().all(|c| {
+        c.is_ascii_alphanumeric()
+            || matches!(c, '_' | '.' | ' ' | '?' | '=' | '<' | '>' | '!' | '(' | ')' | ',')
+    })
+}
+
+/// Checks if a string is a safe SQL identifier (alphanumeric + `_` + `.`).
+fn is_safe_identifier(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+
+    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
 #[cfg(test)]
@@ -236,6 +304,7 @@ mod tests {
     fn bare_query_has_tenant_filter() {
         let sql = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
             .to_sql();
 
         assert_eq!(sql, "SELECT * FROM gold.metrics WHERE tenant_id = ?");
@@ -245,7 +314,9 @@ mod tests {
     fn select_columns() {
         let sql = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
             .select("name, value, created_at")
+            .unwrap()
             .to_sql();
 
         assert_eq!(
@@ -261,7 +332,9 @@ mod tests {
 
         let sql = test_client()
             .tenant_query("silver.class_commits", test_tenant_id())
-            .filter_uuid("org_unit_id = ?", org_id)
+            .unwrap()
+            .filter("org_unit_id = ?", org_id)
+            .unwrap()
             .to_sql();
 
         assert_eq!(
@@ -277,9 +350,13 @@ mod tests {
 
         let sql = test_client()
             .tenant_query("gold.pr_cycle_time", test_tenant_id())
-            .filter_uuid("org_unit_id = ?", org_id)
-            .filter_str("metric_date >= ?", "2026-01-01")
-            .filter_str("metric_date < ?", "2026-04-01")
+            .unwrap()
+            .filter("org_unit_id = ?", org_id)
+            .unwrap()
+            .filter("metric_date >= ?", "2026-01-01")
+            .unwrap()
+            .filter("metric_date < ?", "2026-04-01")
+            .unwrap()
             .to_sql();
 
         assert_eq!(
@@ -293,7 +370,9 @@ mod tests {
     fn order_by_clause() {
         let sql = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
             .order_by("created_at DESC")
+            .unwrap()
             .to_sql();
 
         assert_eq!(
@@ -306,6 +385,7 @@ mod tests {
     fn limit_and_offset() {
         let sql = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
             .limit(25)
             .offset(50)
             .to_sql();
@@ -323,11 +403,17 @@ mod tests {
 
         let sql = test_client()
             .tenant_query("gold.pr_cycle_time", test_tenant_id())
+            .unwrap()
             .select("person_id, avg_hours, metric_date")
-            .filter_uuid("org_unit_id = ?", org_id)
-            .filter_str("metric_date >= ?", "2026-01-01")
-            .filter_i64("avg_hours > ?", 48)
+            .unwrap()
+            .filter("org_unit_id = ?", org_id)
+            .unwrap()
+            .filter("metric_date >= ?", "2026-01-01")
+            .unwrap()
+            .filter("avg_hours > ?", 48)
+            .unwrap()
             .order_by("avg_hours DESC")
+            .unwrap()
             .limit(100)
             .offset(0)
             .to_sql();
@@ -343,13 +429,12 @@ mod tests {
 
     #[test]
     fn tenant_id_is_always_first_filter() {
-        // Even with no additional filters, tenant_id is present
         let sql = test_client()
             .tenant_query("silver.class_people", test_tenant_id())
+            .unwrap()
             .to_sql();
 
         assert!(sql.contains("WHERE tenant_id = ?"));
-        // tenant_id should be the ONLY condition
         assert!(!sql.contains("AND"));
     }
 
@@ -357,7 +442,9 @@ mod tests {
     fn float_filter() {
         let sql = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
-            .filter_f64("value > ?", 99.5)
+            .unwrap()
+            .filter("value > ?", 99.5)
+            .unwrap()
             .to_sql();
 
         assert_eq!(
@@ -370,6 +457,7 @@ mod tests {
     fn limit_only_no_offset() {
         let sql = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
             .limit(10)
             .to_sql();
 
@@ -384,7 +472,9 @@ mod tests {
     fn order_before_limit() {
         let sql = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
             .order_by("name ASC")
+            .unwrap()
             .limit(50)
             .to_sql();
 
@@ -398,66 +488,223 @@ mod tests {
         let tenant = test_tenant_id();
         let client = test_client();
 
-        let sql_silver = client.tenant_query("silver.class_commits", tenant).to_sql();
-        let sql_gold = client.tenant_query("gold.pr_cycle_time", tenant).to_sql();
+        let sql_silver = client
+            .tenant_query("silver.class_commits", tenant)
+            .unwrap()
+            .to_sql();
+        let sql_gold = client
+            .tenant_query("gold.pr_cycle_time", tenant)
+            .unwrap()
+            .to_sql();
 
         assert!(sql_silver.contains("silver.class_commits"));
         assert!(sql_gold.contains("gold.pr_cycle_time"));
         assert_ne!(sql_silver, sql_gold);
     }
 
+    // --- validation returns errors, not panics ---
+
     #[test]
-    #[should_panic(expected = "exactly one '?' placeholder, got 0")]
-    fn filter_with_no_placeholder_panics() {
-        test_client()
+    fn filter_no_placeholder_returns_error() {
+        let result = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
-            .filter_str("status = 'active'", "unused");
+            .unwrap()
+            .filter("status = 'active'", "unused");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("placeholder"));
     }
 
     #[test]
-    #[should_panic(expected = "exactly one '?' placeholder, got 2")]
-    fn filter_with_two_placeholders_panics() {
-        test_client()
+    fn filter_two_placeholders_returns_error() {
+        let result = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
-            .filter_str("value BETWEEN ? AND ?", "unused");
+            .unwrap()
+            .filter("value BETWEEN ? AND ?", "unused");
+        assert!(result.is_err());
     }
 
     #[test]
-    #[should_panic(expected = "alphanumeric")]
-    fn table_with_semicolon_panics() {
-        test_client()
+    fn table_with_semicolon_returns_error() {
+        let result = test_client()
             .tenant_query("gold.metrics; DROP TABLE --", test_tenant_id());
+        assert!(result.is_err());
     }
 
     #[test]
-    #[should_panic(expected = "alphanumeric")]
-    fn table_with_spaces_panics() {
-        test_client()
+    fn table_with_spaces_returns_error() {
+        let result = test_client()
             .tenant_query("gold.metrics WHERE 1=1", test_tenant_id());
+        assert!(result.is_err());
     }
 
     #[test]
-    #[should_panic(expected = "non-empty")]
-    fn empty_table_panics() {
-        test_client().tenant_query("", test_tenant_id());
+    fn empty_table_returns_error() {
+        let result = test_client().tenant_query("", test_tenant_id());
+        assert!(result.is_err());
     }
 
     #[test]
     fn valid_dotted_table_name() {
         let sql = test_client()
             .tenant_query("silver.class_commits", test_tenant_id())
+            .unwrap()
             .to_sql();
         assert!(sql.contains("FROM silver.class_commits"));
     }
 
     #[test]
     fn filter_with_one_placeholder_ok() {
-        // Should not panic
         let sql = test_client()
             .tenant_query("gold.metrics", test_tenant_id())
-            .filter_str("status = ?", "active")
+            .unwrap()
+            .filter("status = ?", "active")
+            .unwrap()
             .to_sql();
 
         assert!(sql.contains("(status = ?)"));
+    }
+
+    // --- order_by validation ---
+
+    #[test]
+    fn order_by_simple_column() {
+        let sql = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .order_by("metric_date DESC")
+            .unwrap()
+            .to_sql();
+        assert!(sql.contains("ORDER BY metric_date DESC"));
+    }
+
+    #[test]
+    fn order_by_multiple_columns() {
+        let sql = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .order_by("metric_date DESC, person_id ASC")
+            .unwrap()
+            .to_sql();
+        assert!(sql.contains("ORDER BY metric_date DESC, person_id ASC"));
+    }
+
+    #[test]
+    fn order_by_injection_semicolon_returns_error() {
+        let result = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .order_by("1; DROP TABLE gold.metrics --");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn order_by_injection_subquery_returns_error() {
+        let result = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .order_by("(SELECT 1)");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn order_by_injection_comment_returns_error() {
+        let result = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .order_by("metric_date -- comment");
+        assert!(result.is_err());
+    }
+
+    // --- select validation ---
+
+    #[test]
+    fn select_simple_columns() {
+        let sql = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .select("person_id, avg_hours")
+            .unwrap()
+            .to_sql();
+        assert!(sql.starts_with("SELECT person_id, avg_hours FROM"));
+    }
+
+    #[test]
+    fn select_star() {
+        let sql = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .select("*")
+            .unwrap()
+            .to_sql();
+        assert!(sql.starts_with("SELECT * FROM"));
+    }
+
+    #[test]
+    fn select_injection_subquery_returns_error() {
+        let result = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .select("*, (SELECT password FROM users) as x");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn select_injection_quotes_returns_error() {
+        let result = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .select("'1' as hack");
+        assert!(result.is_err());
+    }
+
+    // --- filter condition validation ---
+
+    #[test]
+    fn filter_injection_comment_returns_error() {
+        let result = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .filter("status = ? -- bypass", "active");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn filter_injection_semicolon_returns_error() {
+        let result = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .filter("status = ?; DROP TABLE gold.metrics", "x");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn filter_injection_quotes_returns_error() {
+        let result = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .filter("status = 'admin' OR '1'=?", "1");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn filter_with_in_clause() {
+        let sql = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .filter("org_unit_id IN (?)", "uuid1")
+            .unwrap()
+            .to_sql();
+        assert!(sql.contains("(org_unit_id IN (?))"));
+    }
+
+    #[test]
+    fn filter_with_comparison_operators() {
+        let sql = test_client()
+            .tenant_query("gold.metrics", test_tenant_id())
+            .unwrap()
+            .filter("value >= ?", 100)
+            .unwrap()
+            .to_sql();
+        assert!(sql.contains("(value >= ?)"));
     }
 }

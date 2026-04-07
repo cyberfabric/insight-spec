@@ -83,8 +83,11 @@ impl Client {
     ///
     /// The builder automatically adds `WHERE tenant_id = ?` and binds the
     /// tenant ID. All subsequent filters are appended with `AND`.
-    #[must_use]
-    pub fn tenant_query(&self, table: &str, tenant_id: uuid::Uuid) -> QueryBuilder {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidQuery`] if the table name contains unsafe characters.
+    pub fn tenant_query(&self, table: &str, tenant_id: uuid::Uuid) -> Result<QueryBuilder, Error> {
         QueryBuilder::new(self.clone(), table, tenant_id)
     }
 

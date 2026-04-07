@@ -8,7 +8,7 @@ resolver = "3"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Cyber Fabric"]
-repository = "https://github.com/cyberantonz/insight"
+repository = "https://github.com/cyberfabric/insight"
 rust-version = "1.92.0"
 
 [workspace.lints.rust]
