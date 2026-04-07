@@ -5,3 +5,6 @@ __pycache__/
 dist/
 build/
 uv.lock
+.DS_Store
+local
+access
