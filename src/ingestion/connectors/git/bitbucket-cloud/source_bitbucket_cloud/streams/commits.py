@@ -182,7 +182,7 @@ class CommitsStream(BitbucketCloudRestStream):
             self._rate_limiter.wait_if_needed("rest")
             resp = req.get(
                 url,
-                headers=rest_headers(self._token),
+                headers=rest_headers(self._email, self._token),
                 timeout=30,
             )
             remaining = resp.headers.get("X-RateLimit-Remaining")

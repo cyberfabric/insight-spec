@@ -4,7 +4,7 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "title": "Bitbucket Cloud Source Spec",
     "type": "object",
-    "required": ["insight_tenant_id", "insight_source_id", "token", "workspaces"],
+    "required": ["insight_tenant_id", "insight_source_id", "email", "token", "workspaces"],
     "additionalProperties": false,
     "properties": {
       "insight_tenant_id": {
@@ -19,12 +19,18 @@
         "description": "Stable identifier for this connector instance (e.g., bitbucket-cloud-acme-prod).",
         "order": 1
       },
+      "email": {
+        "type": "string",
+        "title": "Bitbucket Email",
+        "description": "Bitbucket account email address used for API token authentication.",
+        "order": 2
+      },
       "token": {
         "type": "string",
         "title": "API Token",
         "description": "Bitbucket Cloud API token with scopes (Repository: Read, Pull requests: Read). Created at Settings > API tokens.",
         "airbyte_secret": true,
-        "order": 2
+        "order": 3
       },
       "workspaces": {
         "type": "array",
