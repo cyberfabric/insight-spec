@@ -98,7 +98,7 @@ The Ingestion Layer provides the end-to-end data pipeline from external source A
 
 ### 1.2 Background / Problem Statement
 
-The previous approach relied on a custom stdout JSON protocol for connectors, a custom runner for execution, and a custom orchestrator for scheduling. While architecturally sound, this approach required significant engineering investment to build and maintain. The ingestion layer adopts proven open-source tools — Airbyte provides 300+ pre-built connectors and a declarative connector builder, Argo Workflows provides Kubernetes-native DAG orchestration, and dbt provides battle-tested SQL transformation framework. Connections are managed via Airbyte API (see `apply-connections.sh`).
+The previous approach relied on a custom stdout JSON protocol for connectors, a custom runner for execution, and a custom orchestrator for scheduling. While architecturally sound, this approach required significant engineering investment to build and maintain. The ingestion layer adopts proven open-source tools — Airbyte provides 300+ pre-built connectors and a declarative connector builder, Argo Workflows provides Kubernetes-native DAG orchestration, and dbt provides battle-tested SQL transformation framework. Connections are managed via Airbyte API (see `airbyte-toolkit/connect.sh`).
 
 ### 1.3 Goals (Business Outcomes)
 
@@ -396,7 +396,7 @@ Silver tables **MUST** follow the established unified schemas (`class_commits`, 
 
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-ing-terraform-connections`
 
-Airbyte connections (source + destination + configured catalog) **MUST** be managed via `apply-connections.sh` which calls the Airbyte API directly. Connection configurations **MUST** be defined in tenant YAML files (`connections/{tenant}.yaml`) and connector descriptors (`descriptor.yaml`). Credentials **MUST NOT** be committed to version control.
+Airbyte connections (source + destination + configured catalog) **MUST** be managed via `airbyte-toolkit/connect.sh` which calls the Airbyte API directly. Connection configurations **MUST** be defined in tenant YAML files (`connections/{tenant}.yaml`) and connector descriptors (`descriptor.yaml`). Credentials **MUST NOT** be committed to version control.
 
 **Rationale**: Configuration as code prevents drift and enables reproducible deployments. Direct API calls avoid Terraform provider version compatibility issues.
 
@@ -406,7 +406,7 @@ Airbyte connections (source + destination + configured catalog) **MUST** be mana
 
 - [ ] `p2` - **ID**: `cpt-insightspec-fr-ing-airbyte-api-custom`
 
-Custom connectors (nocode manifests and CDK Docker images) **MUST** be registered with Airbyte via `upload-manifests.sh` which calls the Airbyte API.
+Custom connectors (nocode manifests and CDK Docker images) **MUST** be registered with Airbyte via `airbyte-toolkit/register.sh` which calls the Airbyte API.
 
 **Rationale**: Connector definitions are dynamic and tightly coupled to the connector package lifecycle.
 
@@ -530,7 +530,7 @@ dbt model contracts via `schema.yml`: column types, not-null constraints, accept
 
 - [ ] `p1` - **ID**: `cpt-insightspec-contract-ing-airbyte-rest-api`
 
-Airbyte REST API (v1) for programmatic management of sources, destinations, connections, and connector definitions. Used by `apply-connections.sh` and `upload-manifests.sh`.
+Airbyte REST API (v1) for programmatic management of sources, destinations, connections, and connector definitions. Used by `airbyte-toolkit/connect.sh` and `airbyte-toolkit/register.sh`.
 
 ## 8. Use Cases
 

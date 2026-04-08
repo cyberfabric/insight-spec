@@ -39,7 +39,7 @@ stringData:
 
 ### Automatically injected
 
-These fields are set by `apply-connections.sh` and should NOT be in the Secret:
+These fields are set by `airbyte-toolkit/connect.sh` and should NOT be in the Secret:
 
 | Field | Source |
 |-------|--------|

@@ -227,7 +227,7 @@ Rules:
 - Labels: `app.kubernetes.io/part-of: insight`
 - Annotations: `insight.cyberfabric.com/connector: <name>`, `insight.cyberfabric.com/source-id: <name>-main`
 - `stringData` keys MUST match `spec.connection_specification` property names (with source-specific prefixes)
-- Do NOT include `insight_tenant_id` or `insight_source_id` — these are injected by `apply-connections.sh`
+- Do NOT include `insight_tenant_id` or `insight_source_id` — these are injected by `connect.sh`
 - Do NOT include `username`/`password` if using `BasicHttpAuthenticator` — these are Builder artifacts
 
 #### 3.4 `README.md` — Connector documentation

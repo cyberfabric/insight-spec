@@ -29,7 +29,7 @@ date: 2026-04-01
 
 Constructor Insight is an open-source project. Consumers deploy it into their own Kubernetes clusters and need to control connector credentials (API keys, OAuth client secrets, tokens) through their existing secret management infrastructure — whether that is HashiCorp Vault with External Secrets Operator, Bitnami Sealed Secrets, or manual `kubectl create secret`.
 
-Currently, credentials are stored as plaintext values inline in tenant configuration YAML files (`connections/{tenant}.yaml`) and passed directly to the Airbyte API by `apply-connections.sh`. This approach has several problems:
+Currently, credentials are stored as plaintext values inline in tenant configuration YAML files (`connections/{tenant}.yaml`) and passed directly to the Airbyte API by `airbyte-toolkit/connect.sh`. This approach has several problems:
 
 - Plaintext secrets in config files are a security risk, especially when configs are stored in Git or GitOps manifests.
 - Consumers cannot use their standard K8s-native secret management tooling.
@@ -44,12 +44,12 @@ The ingestion layer needs a credential resolution mechanism that is secure by de
 * Kubernetes Secrets are the standard secret primitive in all target deployment environments (production clusters and local kind/minikube)
 * Local development environments should mirror production credential flow (dev/prod parity)
 * The solution must maintain backward compatibility during the transition period
-* Minimal changes to the existing `apply-connections.sh` pipeline
+* Minimal changes to the existing `airbyte-toolkit/connect.sh` pipeline
 
 ## Considered Options
 
-* **K8s Secrets with label-based discovery** — `apply-connections.sh` discovers Secrets by label `app.kubernetes.io/part-of=insight` and reads connector type from annotation `insight.cyberfabric.com/connector`
-* **HashiCorp Vault direct integration** — `apply-connections.sh` calls the Vault HTTP API directly to fetch secrets
+* **K8s Secrets with label-based discovery** — `airbyte-toolkit/connect.sh` discovers Secrets by label `app.kubernetes.io/part-of=insight` and reads connector type from annotation `insight.cyberfabric.com/connector`
+* **HashiCorp Vault direct integration** — `airbyte-toolkit/connect.sh` calls the Vault HTTP API directly to fetch secrets
 * **SOPS-encrypted YAML** — credentials remain inline but encrypted using Mozilla SOPS; decrypted at apply time
 * **Environment variables** — credentials injected as environment variables by the Kubernetes pod spec (from Secrets or ConfigMaps)
 
@@ -63,7 +63,7 @@ Chosen option: **K8s Secrets with label-based discovery**, because Kubernetes Se
 * Good, because the solution works with any secret provisioning tool that produces K8s Secrets
 * Good, because local development uses the same label-based discovery as production (kind cluster with locally-created Secrets)
 * Good, because the credential model is simple and unambiguous — K8s Secrets are the sole source, no fallback logic to debug
-* Bad, because the pod running `apply-connections.sh` requires `kubectl` access and a ServiceAccount with RBAC permissions to read Secrets in the target namespace
+* Bad, because the pod running `airbyte-toolkit/connect.sh` requires `kubectl` access and a ServiceAccount with RBAC permissions to read Secrets in the target namespace
 * Bad, because Secret field names must exactly match the connector's `connection_specification` — consumers need per-connector documentation of required fields
 * Note: inline credentials have been fully removed — K8s Secrets are the sole source with no fallback
 
@@ -71,7 +71,7 @@ Chosen option: **K8s Secrets with label-based discovery**, because Kubernetes Se
 
 Confirmed when:
 
-- `apply-connections.sh` discovers K8s Secrets by label and successfully creates Airbyte sources from Secret data
+- `airbyte-toolkit/connect.sh` discovers K8s Secrets by label and successfully creates Airbyte sources from Secret data
 - A local kind cluster setup guide demonstrates creating Secrets and running the pipeline end-to-end
 - Connectors without a matching K8s Secret are skipped with a clear error message
 - Per-connector Secret field documentation is published
@@ -113,7 +113,7 @@ Credentials remain inline in tenant config but encrypted using Mozilla SOPS with
 
 ### Environment variables
 
-Credentials passed as environment variables to the pod running `apply-connections.sh`, sourced from K8s Secrets or ConfigMaps via the pod spec.
+Credentials passed as environment variables to the pod running `airbyte-toolkit/connect.sh`, sourced from K8s Secrets or ConfigMaps via the pod spec.
 
 * Good, because it uses standard K8s env injection — no extra tooling needed
 * Bad, because environment variables have a flat namespace — no structure for multi-connector, multi-instance configurations

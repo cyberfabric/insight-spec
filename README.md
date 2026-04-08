@@ -103,16 +103,25 @@ The solution consists of five main components:
 
 ## Repository Structure
 
+### Root scripts
+
+```
+./up.sh               ← Create Kind cluster + deploy all services
+./init.sh             ← Apply secrets + initialize ingestion stack
+./down.sh             ← Stop services (data preserved)
+./cleanup.sh          ← Delete cluster and all data
+k8s/kind-config.yaml  ← Kind cluster configuration
+```
+
 ### `src/`
 
-Source code for all platform components. Mirrors the component structure in `docs/components/`.
+Source code for all platform components.
 
 ```
 src/
-├── connectors/       ← connector implementations (one directory per source)
-├── orchestrator/     ← connector orchestration service
-├── backend/          ← REST API server (Django)
-└── frontend/         ← SPA (React + TypeScript)
+├── ingestion/        ← Data pipeline (Airbyte + Argo + ClickHouse + dbt)
+├── backend/          ← REST API server (Rust + cyberfabric-core)
+└── frontend/         ← SPA deployment (Dockerfile + Helm; source in separate repo)
 ```
 
 ### `docs/`
@@ -205,6 +214,104 @@ This repo uses [Cypilot](https://github.com/cyberfabric/cyber-pilot) — an AI a
 **Connector spec** — Each connector defines its Bronze table schemas, identity fields, Silver/Gold target streams, and open questions. The `{source}.md` file is the full technical spec; `specs/PRD.md` captures the code-agnostic requirements.
 
 **Extendability** — Adding a new data source means: (1) defining Bronze tables, (2) mapping identity fields, (3) routing to an existing or new Silver stream. The architecture is designed to accommodate new connectors without changes to existing pipelines.
+
+---
+
+## Quick Start
+
+Everything runs in a local [Kind](https://kind.sigs.k8s.io/) (Kubernetes-in-Docker) cluster named `insight`.
+
+### 1. Install prerequisites
+
+```bash
+brew install kind kubectl helm docker
+```
+
+For backend development (optional): `brew install rustup protobuf && rustup default stable`
+For frontend development (optional): `nvm install 25`
+
+### 2. Create cluster and deploy services
+
+```bash
+./up.sh
+```
+
+This creates a Kind cluster, installs ingress-nginx, and deploys:
+- Ingestion stack (Airbyte, Argo Workflows, ClickHouse)
+- Backend API Gateway (Rust, auth disabled locally)
+- Frontend SPA (nginx)
+
+ClickHouse deployment will be skipped until its Secret exists (next step).
+
+### 3. Create secrets
+
+```bash
+cd src/ingestion/secrets
+
+# Infrastructure (required)
+cp clickhouse.yaml.example clickhouse.yaml
+# Edit clickhouse.yaml — set a password
+
+# Connectors (one per source you want to sync)
+cp connectors/m365.yaml.example connectors/m365.yaml
+# Edit with real OAuth credentials — see each connector's README
+
+cd ../../..
+```
+
+### 4. Initialize
+
+```bash
+./init.sh
+```
+
+This applies secrets to the cluster, deploys ClickHouse, creates databases, registers connectors in Airbyte, creates connections, and generates Argo workflow schedules.
+
+### 5. Run a sync (optional)
+
+```bash
+cd src/ingestion
+./run-sync.sh m365 example-tenant
+```
+
+### Services
+
+| Service | URL | Notes |
+|---------|-----|-------|
+| Frontend | http://localhost:8000 | SPA via ingress |
+| API Gateway | http://localhost:8000/api/v1 | Auth disabled locally |
+| Airbyte | http://localhost:8001 | Port-forward |
+| Argo UI | http://localhost:30500 | No auth locally |
+| ClickHouse | http://localhost:30123 | HTTP interface |
+
+### Lifecycle
+
+| Command | Description |
+|---------|-------------|
+| `./up.sh` | Create cluster + deploy everything (idempotent) |
+| `./up.sh ingestion` | Only Airbyte, Argo, ClickHouse |
+| `./up.sh app` | Only backend + frontend |
+| `./init.sh` | Apply secrets + initialize ingestion stack |
+| `./down.sh` | Stop all services (data preserved) |
+| `./cleanup.sh` | Delete cluster and all data |
+
+### Running without Kubernetes
+
+For fast iteration on individual components without K8s:
+
+```bash
+# Backend
+cd src/backend
+cargo run --bin insight-api-gateway -- run -c services/api-gateway/config/no-auth.yaml
+# → http://localhost:8080/api/v1
+
+# Frontend
+cd ../insight-front    # or via symlink
+npm install && npm run dev
+# → http://localhost:5173
+```
+
+See [`src/backend/services/LOCAL_DEV.md`](src/backend/services/LOCAL_DEV.md) for more backend development options (OIDC, different cluster tools, etc.).
 
 ---
 

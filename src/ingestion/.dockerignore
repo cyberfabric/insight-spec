@@ -1,5 +1,4 @@
-connections/.airbyte-state.yaml
-connections/.state/
+airbyte-toolkit/state.yaml
 connections/*.yaml
 !connections/*.yaml.example
 secrets/

@@ -1,5 +1,4 @@
 {{- if .Values.ingress.enabled }}
-{{- $host := required "ingress.host must be set when ingress.enabled is true" .Values.ingress.host }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -14,17 +13,19 @@ spec:
   {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className }}
   {{- end }}
-  {{- if .Values.ingress.tls.enabled }}
+  {{- if and .Values.ingress.tls .Values.ingress.tls.enabled }}
   tls:
     - hosts:
-        - {{ $host | quote }}
+        - {{ .Values.ingress.host | quote }}
       secretName: {{ .Values.ingress.tls.secretName | quote }}
   {{- end }}
   rules:
-    - host: {{ $host | quote }}
+    - {{- if .Values.ingress.host }}
+      host: {{ .Values.ingress.host | quote }}
+      {{- end }}
       http:
         paths:
-          - path: /
+          - path: {{ .Values.gateway.prefixPath | default "/api/v1" }}
             pathType: Prefix
             backend:
               service:

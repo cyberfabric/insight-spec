@@ -30,7 +30,7 @@ src/ingestion/
   scripts/
     generate-schema.sh              #   Extract schemas from discover
     generate-catalog.sh             #   Generate configured_catalog.json
-    upload-manifests.sh             #   Register connectors in Airbyte
+    airbyte-toolkit/register.sh     #   Register connectors in Airbyte
 ```
 
 ## Related Domains

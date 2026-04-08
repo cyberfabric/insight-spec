@@ -7,35 +7,16 @@ cd "$SCRIPT_DIR"
 CONNECTOR="${1:?Usage: $0 <connector> <tenant_id>}"
 TENANT="${2:?Usage: $0 <connector> <tenant_id>}"
 
-export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/kind-ingestion}"
+export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/insight.kubeconfig}"
+export TOOLKIT_DIR="${SCRIPT_DIR}/airbyte-toolkit"
+source "${TOOLKIT_DIR}/lib/state.sh"
 
-# Read connection_id from state (check per-tenant state files and main state)
-CONNECTION_ID=$(python3 -c "
-import yaml, glob, sys
-
-connector = '${CONNECTOR}'
-tenant = '${TENANT}'
-
-# Search in per-tenant state files first, then main state
-state_files = glob.glob('connections/.state/*.yaml') + ['connections/.airbyte-state.yaml']
-for sf in state_files:
-    try:
-        state = yaml.safe_load(open(sf)) or {}
-    except Exception:
-        continue
-    conns = state.get('tenants', {}).get(tenant, {}).get('connections', {})
-    if not conns:
-        continue
-    # Exact match
-    if connector in conns:
-        print(conns[connector])
-        sys.exit(0)
-    # Prefix match: m365 → m365-m365-main
-    for k, v in conns.items():
-        if k.startswith(connector + '-'):
-            print(v)
-            sys.exit(0)
-" 2>/dev/null)
+# Read connection_id from state — iterate source_ids under the connector
+CONNECTION_ID=""
+for source_key in $(state_list "tenants.${TENANT}.connectors.${CONNECTOR}"); do
+  CONNECTION_ID=$(state_get "tenants.${TENANT}.connectors.${CONNECTOR}.${source_key}.connection_id")
+  [[ -n "$CONNECTION_ID" ]] && break
+done
 [[ -n "$CONNECTION_ID" ]] || { echo "ERROR: no connection_id for connector '$CONNECTOR' tenant '$TENANT'. Run update-connections.sh first." >&2; exit 1; }
 
 # Find descriptor by connector name — try exact match, then prefix match

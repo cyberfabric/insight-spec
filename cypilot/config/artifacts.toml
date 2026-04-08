@@ -434,3 +434,15 @@ name = "Org-Chart Domain Design"
 kind = "PRD"
 path = "docs/domain/org-chart/specs/PRD.md"
 name = "Org-Chart Domain PRD"
+
+[[systems.artifacts]]
+kind = "PRD"
+path = "docs/components/airbyte-toolkit/specs/PRD.md"
+name = "Airbyte Toolkit PRD"
+traceability = "DOCS-ONLY"
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/components/airbyte-toolkit/specs/DESIGN.md"
+name = "Airbyte Toolkit Design"
+traceability = "DOCS-ONLY"

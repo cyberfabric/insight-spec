@@ -11,9 +11,9 @@ docker build -t "$IMAGE_NAME" \
   "$INGESTION_DIR"
 
 # Load into Kind cluster if running locally
-if command -v kind &>/dev/null && kind get clusters 2>/dev/null | grep -q "^ingestion$"; then
+if command -v kind &>/dev/null && kind get clusters 2>/dev/null | grep -q "^insight$"; then
   echo "Loading into Kind cluster..."
-  kind load docker-image "$IMAGE_NAME" --name ingestion
+  kind load docker-image "$IMAGE_NAME" --name insight
 fi
 
 echo "Done: ${IMAGE_NAME}"

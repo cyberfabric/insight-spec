@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.."
+# ---------------------------------------------------------------------------
+# Airbyte Toolkit — Register connector manifests as Airbyte source definitions
+#
+# Usage: ./register.sh [--all | connector_name]
+#
+# connector_name is the relative path under connectors/, e.g. "collaboration/m365"
+# --all registers every connector that has a connector.yaml manifest
+# ---------------------------------------------------------------------------
 
-# KUBECONFIG can be empty when running in-cluster
+TOOLKIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INGESTION_DIR="$(cd "$TOOLKIT_DIR/.." && pwd)"
 
-# Resolve shared Airbyte env (AIRBYTE_TOKEN, WORKSPACE_ID, etc.)
-if [[ -z "${AIRBYTE_TOKEN:-}" ]]; then
-  source ./scripts/resolve-airbyte-env.sh
-fi
+CONNECTORS_DIR="${INGESTION_DIR}/connectors"
 
-AIRBYTE_URL="${AIRBYTE_API:-http://localhost:8000}"
-CONNECTORS_DIR="./connectors"
+source "${TOOLKIT_DIR}/lib/env.sh"
+source "${TOOLKIT_DIR}/lib/state.sh"
 
-source ./scripts/airbyte-state.sh
-
+# ---------------------------------------------------------------------------
+# upload_connector <connector_path>
+#   connector_path — relative to CONNECTORS_DIR, e.g. "collaboration/m365"
+# ---------------------------------------------------------------------------
 upload_connector() {
   local connector="$1"
   local connector_dir="${CONNECTORS_DIR}/${connector}"
@@ -31,7 +37,7 @@ upload_connector() {
   name=$(yq -r '.name' "${descriptor_path}" 2>/dev/null || basename "$connector")
 
   local output
-  output=$(python3 - "$AIRBYTE_URL" "$AIRBYTE_TOKEN" "$WORKSPACE_ID" "$name" "$manifest_path" <<'PYTHON'
+  output=$(python3 - "$AIRBYTE_API" "$AIRBYTE_TOKEN" "$WORKSPACE_ID" "$name" "$manifest_path" <<'PYTHON'
 import sys, json, yaml, urllib.request
 
 airbyte_url, token, workspace_id, name, manifest_path = sys.argv[1:6]
@@ -128,14 +134,17 @@ PYTHON
 )
   echo "$output"
 
-  # Save definition ID to state
+  # Save definition ID to state at definitions.<connector_name>.id
   local def_id
   def_id=$(echo "$output" | grep "^  DEF_ID:" | tail -1 | cut -d: -f2)
   if [[ -n "$def_id" ]]; then
-    state_set "definitions.${name}" "$def_id"
+    state_set "definitions.${name}.id" "$def_id"
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 if [[ "${1:-}" == "--all" ]]; then
   manifests=$(find "$CONNECTORS_DIR" -name "connector.yaml" 2>/dev/null)
   if [[ -z "$manifests" ]]; then
@@ -145,6 +154,7 @@ if [[ "${1:-}" == "--all" ]]; then
   for manifest in $manifests; do
     connector_dir=$(dirname "$manifest")
     connector="${connector_dir#${CONNECTORS_DIR}/}"
+    echo "  Registering connector: $connector"
     upload_connector "$connector"
   done
 else

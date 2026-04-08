@@ -14,26 +14,19 @@ CONNECTIONS_DIR="./connections"
 echo "  Applying WorkflowTemplates..."
 kubectl apply -f "${WORKFLOWS_DIR}/templates/"
 
-# --- Get connection_id from per-tenant state ---
+# --- Get connection_id from toolkit state ---
+export TOOLKIT_DIR="${SCRIPT_DIR}/../airbyte-toolkit"
+source "${TOOLKIT_DIR}/lib/state.sh"
+
 get_connection_id() {
   local tenant="$1" connector="$2"
-  local state_file="${CONNECTIONS_DIR}/.state/${tenant}.yaml"
-  [[ -f "$state_file" ]] || return 1
-  python3 -c "
-import yaml, sys
-state = yaml.safe_load(open('$state_file')) or {}
-conns = state.get('tenants', {}).get('$tenant', {}).get('connections', {})
-# Exact match first
-if '$connector' in conns:
-    print(conns['$connector'])
-    sys.exit(0)
-# Prefix match: m365 → m365-m365-main
-for k, v in conns.items():
-    if k.startswith('$connector' + '-'):
-        print(v)
-        sys.exit(0)
-sys.exit(1)
-" 2>/dev/null
+  local conn_id=""
+  for source_key in $(state_list "tenants.${tenant}.connectors.${connector}"); do
+    conn_id=$(state_get "tenants.${tenant}.connectors.${connector}.${source_key}.connection_id")
+    [[ -n "$conn_id" ]] && break
+  done
+  [[ -n "$conn_id" ]] || return 1
+  echo "$conn_id"
 }
 
 # --- Generate and apply CronWorkflows for a tenant ---
@@ -87,9 +80,7 @@ sync_tenant() {
 
 # --- Main ---
 if [[ "${1:-}" == "--all" ]]; then
-  for config in "${CONNECTIONS_DIR}"/*.yaml; do
-    [[ -f "$config" ]] || continue
-    tenant=$(basename "$config" .yaml)
+  for tenant in $(state_list "tenants"); do
     echo "  Syncing workflows for tenant: $tenant"
     sync_tenant "$tenant"
   done

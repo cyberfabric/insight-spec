@@ -95,7 +95,7 @@ stringData:
   {field}: {value}                             # fields from connector.yaml connection_specification
 ```
 
-**Discovery**: `apply-connections.sh` discovers Secrets by label `app.kubernetes.io/part-of=insight` and reads connector type from annotation `insight.cyberfabric.com/connector`.
+**Discovery**: `connect.sh` discovers Secrets by label `app.kubernetes.io/part-of=insight` and reads connector type from annotation `insight.cyberfabric.com/connector`.
 
 **Tenant YAML**: Contains only `tenant_id`. No connector config, no credentials — everything comes from K8s Secrets. `insight_tenant_id` is set from tenant YAML `tenant_id`. `insight_source_id` is set from Secret annotation `insight.cyberfabric.com/source-id`.
 
@@ -121,7 +121,7 @@ Scripts identify Airbyte resources (definitions, sources, connections) by UUID f
 When rotating ClickHouse password:
 1. Update K8s Secret → `./secrets/apply.sh --infra-only`
 2. Restart ClickHouse → `kubectl rollout restart deployment/clickhouse -n data` (strategy: Recreate — avoids PVC conflicts)
-3. Sync Airbyte destination → `./scripts/apply-connections.sh <tenant>` (updates destination password from Secret)
+3. Sync Airbyte destination → `./scripts/connect.sh <tenant>` (updates destination password from Secret)
 
 ## Service Credentials
 
@@ -140,9 +140,9 @@ Quick test: `kubectl exec -n data deploy/clickhouse -- clickhouse-client --passw
 
 | Environment | How to get credentials |
 |-------------|----------------------|
-| Local (Kind) | API at `http://localhost:8000`, token via `{INGESTION_DIR}/scripts/resolve-airbyte-env.sh` |
+| Local (Kind) | API at `http://localhost:8000`, token via `{INGESTION_DIR}/airbyte-toolkit/lib/env.sh` |
 | In-cluster | API at `http://airbyte-airbyte-server-svc.airbyte.svc.cluster.local:8001` |
-| Any cluster | `source {INGESTION_DIR}/scripts/resolve-airbyte-env.sh` → sets `AIRBYTE_API`, `AIRBYTE_TOKEN`, `WORKSPACE_ID` |
+| Any cluster | `source {INGESTION_DIR}/airbyte-toolkit/lib/env.sh` → sets `AIRBYTE_API`, `AIRBYTE_TOKEN`, `WORKSPACE_ID` |
 
 Quick test: `curl -s -H "Authorization: Bearer $AIRBYTE_TOKEN" "$AIRBYTE_API/api/v1/health"`
 
@@ -166,7 +166,7 @@ Quick test: `kubectl get workflows -n argo --no-headers | tail -5`
 
 If `<name>` is not a path, search `src/ingestion/connectors/` for it.
 
-ALWAYS use the full relative path (e.g. `collaboration/m365`, not just `m365`) when calling `upload-manifests.sh` directly — it resolves `connectors/{path}/connector.yaml`.
+ALWAYS use the full relative path (e.g. `collaboration/m365`, not just `m365`) when calling `register.sh` directly — it resolves `connectors/{path}/connector.yaml`.
 
 If `<command>` is omitted, show available commands and existing connectors.
 

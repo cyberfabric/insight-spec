@@ -1,20 +1,45 @@
 # Airbyte Helm values — local Kind cluster
 # Uses latest version from airbyte/airbyte Helm chart
 
+# Disable connector builder to save resources locally
 connectorBuilderServer:
-  enabled: true
+  enabled: false
 
 server:
   resources:
     requests:
-      memory: 512Mi
-      cpu: 250m
+      memory: 256Mi
+      cpu: 100m
 
 worker:
   resources:
     requests:
-      memory: 512Mi
-      cpu: 250m
+      memory: 256Mi
+      cpu: 100m
+
+workloadLauncher:
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+
+workloadApiServer:
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+
+cron:
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+
+temporal:
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
 
 # Airbyte's internal Postgres (managed by the chart)
 postgresql:

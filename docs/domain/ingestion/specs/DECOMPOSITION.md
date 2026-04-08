@@ -34,7 +34,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
 
 **Key Architectural Decisions**:
 - Silver layer union via dbt tags: each connector's `to_{domain}.sql` tagged with `silver:class_{domain}`, union models auto-discover by tag
-- Connections managed via Airbyte API (`apply-connections.sh`) with tenant YAML configs
+- Connections managed via Airbyte API (`airbyte-toolkit/connect.sh`) with tenant YAML configs
 - Per-tenant Argo CronWorkflows generated from connector `descriptor.yaml`
 - Kind K8s cluster for local development (same Helm charts as production)
 - `insight-toolbox` container runs all management scripts inside the cluster
@@ -237,7 +237,7 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
 - **Scope**:
   - Tenant credential files in `connections/{tenant}.yaml` (gitignored)
   - `credentials.yaml.example` in each connector package (tracked)
-  - `apply-connections.sh` reads tenant YAML + connector `descriptor.yaml`
+  - `airbyte-toolkit/connect.sh` reads tenant YAML + connector `descriptor.yaml`
   - Creates source + destination + connection via Airbyte API
   - Connection state persisted as K8s ConfigMaps
   - Idempotent — safe to re-run
@@ -483,12 +483,12 @@ The Ingestion Layer DESIGN is decomposed into seven features organized around de
 
 - [ ] `p1` - **ID**: `cpt-insightspec-feature-k8s-secret-credentials`
 
-- **Purpose**: Enable `apply-connections.sh` to discover and resolve connector credentials from Kubernetes Secrets via label-based discovery, replacing inline plaintext credentials in tenant YAML. Consumers manage secrets through their own K8s secret infrastructure (Vault + ESO, Sealed Secrets, manual).
+- **Purpose**: Enable `airbyte-toolkit/connect.sh` to discover and resolve connector credentials from Kubernetes Secrets via label-based discovery, replacing inline plaintext credentials in tenant YAML. Consumers manage secrets through their own K8s secret infrastructure (Vault + ESO, Sealed Secrets, manual).
 
 - **Depends On**: `cpt-insightspec-feature-terraform-connections`
 
 - **Scope**:
-  - `src/ingestion/scripts/apply-connections.sh` — Secret discovery, credential merge, backward compatibility
+  - `src/ingestion/airbyte-toolkit/connect.sh` — Secret discovery, credential merge, backward compatibility
   - `src/ingestion/connections/example-tenant.yaml` — updated to remove inline credentials
   - `src/ingestion/connectors/*/README.md` — per-connector K8s Secret specification (7 connectors)
 

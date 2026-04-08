@@ -9,7 +9,7 @@ echo "=== Updating workflows ==="
 echo "  Building toolbox..."
 ./tools/toolbox/build.sh 2>&1 | tail -1
 
-export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/kind-ingestion}"
+export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/insight.kubeconfig}"
 
 ARGS="${TENANT:---all}"
 kubectl delete pod update-workflows -n data --ignore-not-found 2>/dev/null

@@ -1,20 +1,14 @@
 #!/usr/bin/env bash
+# Stop ingestion services (data preserved).
+# Expects KUBECONFIG to be set by the caller (root down.sh).
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-ENV="${ENV:-local}"
-CLUSTER_NAME="ingestion"
-KUBECONFIG_PATH="${KUBECONFIG:-${HOME}/.kube/kind-ingestion}"
-
-if [[ "$ENV" == "local" ]]; then
-  kind export kubeconfig --name "${CLUSTER_NAME}" --kubeconfig "${KUBECONFIG_PATH}" 2>/dev/null || true
+if [[ -z "${KUBECONFIG:-}" ]]; then
+  echo "ERROR: KUBECONFIG is not set. Run the root down.sh instead." >&2
+  exit 1
 fi
 
-export KUBECONFIG="${KUBECONFIG_PATH}"
-
-echo "=== Stopping services (data preserved) ==="
+echo "=== Ingestion: stopping services (data preserved) ==="
 
 # Stop Argo workflows
 echo "  Stopping Argo workflows..."
@@ -29,13 +23,4 @@ echo "  Stopping Airbyte..."
 kubectl scale deployment -n airbyte --all --replicas=0 2>/dev/null || true
 kubectl scale statefulset -n airbyte --all --replicas=0 2>/dev/null || true
 
-# Stop port-forward
-pkill -f 'port-forward.*airbyte' 2>/dev/null || true
-
-# Stop Kind cluster (local only) — preserves all data inside
-if [[ "$ENV" == "local" ]]; then
-  echo "  Stopping Kind cluster..."
-  docker stop "${CLUSTER_NAME}-control-plane" 2>/dev/null || true
-fi
-
-echo "=== Done (data preserved, run up.sh to restart) ==="
+echo "=== Ingestion: stopped ==="

@@ -1,53 +1,91 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR/.."
+# ---------------------------------------------------------------------------
+# Airbyte Toolkit — Create sources, destinations, connections per tenant
+#
+# Usage: ./connect.sh [--all | tenant_name]
+#
+# tenant_name is the filename stem from connections/<tenant>.yaml
+# --all processes every .yaml file in connections/
+# ---------------------------------------------------------------------------
 
-# KUBECONFIG can be empty when running in-cluster
+TOOLKIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INGESTION_DIR="$(cd "$TOOLKIT_DIR/.." && pwd)"
 
-# Resolve shared Airbyte env
-if [[ -z "${AIRBYTE_TOKEN:-}" ]]; then
-  source ./scripts/resolve-airbyte-env.sh
-fi
+CONNECTIONS_DIR="${INGESTION_DIR}/connections"
+CONNECTORS_DIR="${INGESTION_DIR}/connectors"
 
-CONNECTIONS_DIR="./connections"
-CONNECTORS_DIR="./connectors"
+source "${TOOLKIT_DIR}/lib/env.sh"
+source "${TOOLKIT_DIR}/lib/state.sh"
 
+# ---------------------------------------------------------------------------
+# apply_tenant <tenant_config_path>
+# ---------------------------------------------------------------------------
 apply_tenant() {
   local tenant_config="$1"
+  local tenant
+  tenant=$(basename "$tenant_config" .yaml)
 
-  python3 - "$tenant_config" "$CONNECTORS_DIR" "$CONNECTIONS_DIR" \
-    "${AIRBYTE_API:-http://localhost:8000}" "$AIRBYTE_TOKEN" "$WORKSPACE_ID" \
-    "${CONNECTIONS_DIR}/.airbyte-state.yaml" <<'PYTHON'
-import sys, os, json, yaml, urllib.request, urllib.error, pathlib
+  python3 - "$tenant_config" "$CONNECTORS_DIR" \
+    "$AIRBYTE_API" "$AIRBYTE_TOKEN" "$WORKSPACE_ID" \
+    "$STATE_FILE" "$tenant" <<'PYTHON'
+import sys, os, json, yaml, urllib.request, urllib.error, pathlib, subprocess, base64
 
-tenant_config_path, connectors_dir, connections_dir, airbyte_url, token, workspace_id, state_path = sys.argv[1:8]
+tenant_config_path = sys.argv[1]
+connectors_dir     = sys.argv[2]
+airbyte_url        = sys.argv[3]
+token              = sys.argv[4]
+workspace_id       = sys.argv[5]
+state_path         = sys.argv[6]
+tenant_key         = sys.argv[7]
 
-# Load state
-state = yaml.safe_load(open(state_path)) if os.path.exists(state_path) else {}
-if not state: state = {}
+# ---------------------------------------------------------------------------
+# State helpers — read/write the shared state.yaml directly
+# ---------------------------------------------------------------------------
+def load_state():
+    if os.path.exists(state_path) and os.path.getsize(state_path) > 0:
+        with open(state_path) as f:
+            data = yaml.safe_load(f)
+        return data if data else {}
+    return {}
 
-def save_state():
+def save_state(data):
     with open(state_path, "w") as f:
-        yaml.dump(state, f, default_flow_style=False, sort_keys=False)
-state_dir = os.path.join(connections_dir, ".state")
-os.makedirs(state_dir, exist_ok=True)
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
-config_basename = os.path.splitext(os.path.basename(tenant_config_path))[0]
+def state_get(data, dotpath):
+    """Navigate a nested dict by dot-separated path. Returns str or None."""
+    d = data
+    for k in dotpath.split("."):
+        if isinstance(d, dict):
+            d = d.get(k)
+        else:
+            return None
+    return d
 
+def state_set(data, dotpath, value):
+    """Set a value in a nested dict by dot-separated path, creating parents."""
+    keys = dotpath.split(".")
+    d = data
+    for k in keys[:-1]:
+        d = d.setdefault(k, {})
+    d[keys[-1]] = value
+
+state = load_state()
+
+# ---------------------------------------------------------------------------
+# Load tenant config
+# ---------------------------------------------------------------------------
 with open(tenant_config_path) as f:
     tenant = yaml.safe_load(f)
 
 tenant_id = tenant["tenant_id"]
 dest_config = tenant.get("destination", {})
-state_path = os.path.join(state_dir, f"{config_basename}.yaml")
 
-state = {}
-if os.path.exists(state_path):
-    with open(state_path) as f:
-        state = yaml.safe_load(f) or {}
-
+# ---------------------------------------------------------------------------
+# Airbyte API helpers
+# ---------------------------------------------------------------------------
 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 class ApiError(Exception):
@@ -77,9 +115,9 @@ def api_get(path, data):
         print(f"  ERROR: Airbyte API returned {e.code} (expected 200 or 404)", file=sys.stderr)
         sys.exit(1)
 
-# --- K8s Secret discovery ---
-import subprocess, base64
-
+# ---------------------------------------------------------------------------
+# K8s Secret discovery
+# ---------------------------------------------------------------------------
 def discover_secrets():
     """Discover Insight connector Secrets by label in 'data' namespace."""
     result = subprocess.run(
@@ -143,9 +181,10 @@ def resolve_clickhouse_password():
 
 ch_password = resolve_clickhouse_password()
 
-# --- ClickHouse destination definition ID ---
-# Definitions are Airbyte built-in — lookup by name is OK here (not user resources)
-ch_def_id = state.get("clickhouse_definition_id")
+# ---------------------------------------------------------------------------
+# ClickHouse destination definition ID (Airbyte built-in)
+# ---------------------------------------------------------------------------
+ch_def_id = state_get(state, "destinations.clickhouse.definition_id")
 if not ch_def_id:
     defs = api("POST", "/api/v1/destination_definitions/list", {"workspaceId": workspace_id})
     if defs:
@@ -156,11 +195,13 @@ if not ch_def_id:
 if not ch_def_id:
     print("  ERROR: ClickHouse destination definition not found in Airbyte", file=sys.stderr)
     sys.exit(1)
-state["clickhouse_definition_id"] = ch_def_id
+state_set(state, "destinations.clickhouse.definition_id", ch_def_id)
 
-# --- Shared ClickHouse destination ---
+# ---------------------------------------------------------------------------
+# Shared ClickHouse destination
+# ---------------------------------------------------------------------------
 shared_dest_name = "clickhouse"
-shared_dest_id = state.get("shared_destination_id")
+shared_dest_id = state_get(state, "destinations.clickhouse.id")
 ch_config = {
     "host": dest_config.get("host", "clickhouse.data.svc.cluster.local"),
     "port": str(dest_config.get("port", 8123)),
@@ -199,12 +240,11 @@ if not shared_dest_id:
     else:
         print(f"  ERROR: could not create shared ClickHouse destination: {result}", file=sys.stderr)
         sys.exit(1)
-state["shared_destination_id"] = shared_dest_id
+state_set(state, "destinations.clickhouse.id", shared_dest_id)
 
-# --- Discover K8s Secrets ---
-state.setdefault("connectors", {})
-conn_state_all = state["connectors"]
-
+# ---------------------------------------------------------------------------
+# Discover K8s Secrets
+# ---------------------------------------------------------------------------
 all_secrets = discover_secrets()
 if all_secrets:
     print(f"  Discovered {len(all_secrets)} K8s Secret(s): {', '.join(s['name'] for s in all_secrets)}")
@@ -215,9 +255,9 @@ secrets_by_connector = {}
 for s in all_secrets:
     secrets_by_connector.setdefault(s["connector"], []).append(s)
 
-# --- Build connector instances from K8s Secrets (sole source of truth) ---
-# Active connectors are determined entirely by K8s Secrets, not by tenant YAML.
-# Tenant YAML provides only tenant_id.
+# ---------------------------------------------------------------------------
+# Build connector instances from K8s Secrets (sole source of truth)
+# ---------------------------------------------------------------------------
 connector_instances = []
 for connector_name, matching_secrets in secrets_by_connector.items():
     for secret in matching_secrets:
@@ -228,7 +268,9 @@ for connector_name, matching_secrets in secrets_by_connector.items():
         connector_instances.append((connector_name, sid, config))
         print(f"  Connector: {connector_name} (source: {sid}, from Secret '{secret['name']}')")
 
-# --- Per-connector sources + connections (ID-based only) ---
+# ---------------------------------------------------------------------------
+# Per-connector sources + connections (ID-based only)
+# ---------------------------------------------------------------------------
 for connector_name, source_id_label, config in connector_instances:
 
     # Find descriptor by connector name
@@ -243,8 +285,10 @@ for connector_name, source_id_label, config in connector_instances:
         print(f"    SKIP: no descriptor for {connector_name}")
         continue
 
-    state_key = f"{connector_name}-{source_id_label}"
-    conn_state = state["connectors"].setdefault(state_key, {})
+    # State paths for this connector instance
+    # tenants.<tenant_key>.connectors.<connector_name>.<source_id_label>.source_id
+    # tenants.<tenant_key>.connectors.<connector_name>.<source_id_label>.connection_id
+    tenant_connector_path = f"tenants.{tenant_key}.connectors.{connector_name}.{source_id_label}"
 
     # Create ClickHouse database
     db_name = descriptor.get("connection", {}).get("namespace", f"bronze_{connector_name}")
@@ -256,10 +300,10 @@ for connector_name, source_id_label, config in connector_instances:
         capture_output=True, timeout=30
     )
 
-    # --- Source definition ID (from state, then from definitions state) ---
-    def_id = conn_state.get("definition_id") or state.get("definitions", {}).get(connector_name)
+    # --- Source definition ID (from state) ---
+    def_id = state_get(state, f"definitions.{connector_name}.id")
     if not def_id:
-        # Definitions are Airbyte built-in — name lookup is OK
+        # Fallback: list definitions from Airbyte API by name
         defs = api("POST", "/api/v1/source_definitions/list", {"workspaceId": workspace_id})
         if defs:
             for d in defs.get("sourceDefinitions", []):
@@ -268,11 +312,11 @@ for connector_name, source_id_label, config in connector_instances:
         if not def_id:
             print(f"    SKIP: source definition not found for {connector_name}")
             continue
-    conn_state["definition_id"] = def_id
+        state_set(state, f"definitions.{connector_name}.id", def_id)
 
-    # --- Source (ID-based: state → verify → create if missing) ---
+    # --- Source (ID-based: state -> verify -> create if missing) ---
     source_name = f"{connector_name}-{source_id_label}-{tenant_id}"
-    source_id = conn_state.get("source_id")
+    source_id = state_get(state, f"{tenant_connector_path}.source_id")
 
     if source_id:
         # Verify source exists in Airbyte
@@ -280,11 +324,13 @@ for connector_name, source_id_label, config in connector_instances:
         if not existing or "sourceId" not in existing:
             print(f"    Source {source_id} gone from Airbyte, recreating...")
             # Also delete stale connection
-            old_conn = conn_state.pop("connection_id", None)
+            old_conn = state_get(state, f"{tenant_connector_path}.connection_id")
             if old_conn:
                 api("POST", "/api/v1/connections/delete", {"connectionId": old_conn})
             source_id = None
-            conn_state.pop("source_id", None)
+            # Clear stale IDs from state
+            state_set(state, f"{tenant_connector_path}.source_id", "")
+            state_set(state, f"{tenant_connector_path}.connection_id", "")
         else:
             # Update source config (credentials may have changed)
             api("POST", "/api/v1/sources/update", {
@@ -307,18 +353,17 @@ for connector_name, source_id_label, config in connector_instances:
         else:
             print(f"    ERROR: could not create source for {connector_name}: {result}", file=sys.stderr)
             continue
-    conn_state["source_id"] = source_id
+    state_set(state, f"{tenant_connector_path}.source_id", source_id)
 
-    # --- Connection (ID-based: state → verify → create if missing) ---
+    # --- Connection (ID-based: state -> verify -> create if missing) ---
     connection_name = f"{connector_name}-{source_id_label}-to-clickhouse-{tenant_id}"
-    connection_id = conn_state.get("connection_id")
+    connection_id = state_get(state, f"{tenant_connector_path}.connection_id")
 
     if connection_id:
         existing = api_get("/api/v1/connections/get", {"connectionId": connection_id})
         if not existing or "connectionId" not in existing:
             print(f"    Connection {connection_id} gone from Airbyte, recreating...")
             connection_id = None
-            conn_state.pop("connection_id", None)
         else:
             print(f"    Connection exists: {connection_id}")
 
@@ -365,20 +410,15 @@ for connector_name, source_id_label, config in connector_instances:
             print(f"    ERROR: could not create connection: {result}", file=sys.stderr)
 
     if connection_id:
-        conn_state["connection_id"] = connection_id
+        state_set(state, f"{tenant_connector_path}.connection_id", connection_id)
 
-# Save state
-state["workspace_id"] = workspace_id
-for cn, cs in conn_state_all.items():
-    for key in ("source_id", "connection_id"):
-        if key in cs:
-            section = key.replace("_id", "s")
-            state.setdefault("tenants", {}).setdefault(tenant_id, {}).setdefault(section, {})[cn] = cs[key]
-    if "definition_id" in cs:
-        state.setdefault("definitions", {})[cn] = cs["definition_id"]
+# ---------------------------------------------------------------------------
+# Persist state
+# ---------------------------------------------------------------------------
+state_set(state, "workspace_id", workspace_id)
+save_state(state)
 
-save_state()
-
+# Mirror to ConfigMap when running in-cluster
 if os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token"):
     os.system(f'kubectl create configmap airbyte-state --from-file=state.yaml={state_path} -n data --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null')
 
@@ -386,16 +426,20 @@ print(f"  State saved: {state_path}")
 PYTHON
 }
 
-# --- Main ---
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 if [[ "${1:-}" == "--all" ]]; then
   for config_file in "${CONNECTIONS_DIR}"/*.yaml; do
     [[ -f "$config_file" ]] || continue
+    # Skip example files
+    [[ "$config_file" == *.example ]] && continue
     tenant=$(basename "$config_file" .yaml)
     echo "  Applying connections for tenant: $tenant"
     apply_tenant "$config_file"
   done
 else
-  tenant="${1:?Usage: $0 <tenant_id> | --all}"
+  tenant="${1:?Usage: $0 <tenant_name> | --all}"
   config_file="${CONNECTIONS_DIR}/${tenant}.yaml"
   [[ -f "$config_file" ]] || { echo "ERROR: no config at ${config_file}" >&2; exit 1; }
   echo "  Applying connections for tenant: $tenant"

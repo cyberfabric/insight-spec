@@ -13,7 +13,7 @@ ingress:
   enabled: true
   className: nginx
   annotations: {}
-  host: insight.example.com
+  host: ""              # Leave empty for local (no host-based routing)
   tls:
     enabled: false
     secretName: ""

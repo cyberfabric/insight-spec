@@ -96,7 +96,7 @@ Tenant credentials live in `connections/`:
 connections/
   example-tenant.yaml.example  # Template (tracked in git)
   example-tenant.yaml          # Real credentials (gitignored)
-  .state/                      # Generated state (gitignored)
+  .state/                      # Generated state (gitignored, see airbyte-toolkit/state.yaml)
 ```
 
 Format:
