@@ -12,9 +12,9 @@ Checks that a connector package meets all requirements from the connector spec.
 Read connector package files and verify each item:
 
 ### Structure
-- [ ] `connector.yaml` exists (nocode) or `src/source_<name>/source.py` exists (CDK)
-- [ ] `descriptor.yaml` exists with required fields (name, version, type, schedule, dbt_select, connection)
-- [ ] `credentials.yaml.example` exists with `insight_source_id`
+- [ ] `connector.yaml` exists (nocode) or `Dockerfile` + `source_<name>/source.py` exists (CDK)
+- [ ] `descriptor.yaml` exists with required fields (name, version, type, schedule, workflow, dbt_select, connection.namespace)
+- [ ] K8s Secret example in `secrets/connectors/<name>.yaml.example` with `insight_source_id` annotation
 - [ ] `dbt/` directory with at least one .sql model and schema.yml
 
 ### Manifest (nocode)
@@ -74,7 +74,7 @@ Read connector package files and verify each item:
 
   Structure:    PASS (4/4)
   Manifest:     PASS (12/12)  or  CDK: PASS (5/5)
-  Descriptor:   PASS (5/5)
+  Descriptor:   PASS (7/7)
   dbt Models:   PASS (7/7)
   dbt Schema:   PASS (4/4)
   Credentials:  PASS (3/3)

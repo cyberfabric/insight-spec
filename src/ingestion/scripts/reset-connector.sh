@@ -20,6 +20,12 @@ source ./scripts/airbyte-state.sh
 CONNECTOR="${1:?Usage: $0 <connector_name> <tenant>}"
 TENANT="${2:?Usage: $0 <connector_name> <tenant>}"
 
+# Validate connector name (prevent SQL injection in DROP DATABASE)
+if [[ ! "$CONNECTOR" =~ ^[a-z0-9_-]+$ ]]; then
+  echo "ERROR: invalid connector name '${CONNECTOR}' (only lowercase alphanumeric, hyphens, underscores)" >&2
+  exit 1
+fi
+
 export KUBECONFIG="${KUBECONFIG:-${HOME}/.kube/kind-ingestion}"
 
 # Resolve tenant_id from tenant config
@@ -109,7 +115,7 @@ for section in ("sources", "connections"):
 
 # Clean definitions
 defs = state.get("definitions", {})
-keys_to_remove = [k for k in defs if k.startswith(f"{connector}")]
+keys_to_remove = [k for k in defs if k == connector or k.startswith(f"{connector}-")]
 for k in keys_to_remove:
     del defs[k]
 

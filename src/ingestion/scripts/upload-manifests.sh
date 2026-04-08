@@ -149,16 +149,17 @@ PYTHON
 
 if [[ "${1:-}" == "--all" ]]; then
   # Find all connectors by descriptor.yaml (covers both nocode and CDK)
-  descriptors=$(find "$CONNECTORS_DIR" -name "descriptor.yaml" 2>/dev/null)
-  if [[ -z "$descriptors" ]]; then
-    echo "  No connectors found"
-    exit 0
-  fi
-  for desc in $descriptors; do
+  found=0
+  while IFS= read -r -d '' desc; do
     connector_dir=$(dirname "$desc")
     connector="${connector_dir#${CONNECTORS_DIR}/}"
     upload_connector "$connector"
-  done
+    found=1
+  done < <(find "$CONNECTORS_DIR" -name "descriptor.yaml" -print0 2>/dev/null)
+  if [[ "$found" -eq 0 ]]; then
+    echo "  No connectors found"
+    exit 0
+  fi
 else
   upload_connector "${1:?Usage: $0 <connector_path> | --all}"
 fi

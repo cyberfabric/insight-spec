@@ -65,10 +65,12 @@ This script is idempotent — it handles both creation and updates:
 
 ### Airbyte State
 
-All resource IDs are stored per-tenant in `connections/.state/<tenant>.yaml` (gitignored).
-Scripts read/write these files automatically. Each tenant has its own isolated state.
+Resource IDs are stored in two levels:
+- **Global**: `connections/.airbyte-state.yaml` — definition IDs (shared across tenants)
+- **Per-tenant**: `connections/.state/<tenant>.yaml` — source IDs, connection IDs, destination ID
 
-On host: per-tenant YAML files. In K8s: ConfigMap `airbyte-state`.
+Both are gitignored and auto-generated. Scripts read/write them automatically.
+In K8s: ConfigMap `airbyte-state` in namespace `data`.
 
 ## Phase 3: Create Workflows
 

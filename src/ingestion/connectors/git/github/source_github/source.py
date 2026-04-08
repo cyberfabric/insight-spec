@@ -36,7 +36,9 @@ class SourceGitHub(AbstractSource):
         from source_github.clients.auth import rest_headers
 
         token = config["github_token"]
-        organizations = config.get("github_organizations", [])
+        organizations = config.get("github_organizations")
+        if not organizations:
+            return False, "github_organizations is required and must not be empty"
         headers = rest_headers(token)
 
         try:
