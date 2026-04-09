@@ -144,6 +144,16 @@ name = "Jira Connector Specification"
 
 [[systems.artifacts]]
 kind = "PRD"
+path = "docs/components/connectors/task-tracking/jira/specs/PRD.md"
+name = "Jira Connector PRD"
+
+[[systems.artifacts]]
+kind = "DESIGN"
+path = "docs/components/connectors/task-tracking/jira/specs/DESIGN.md"
+name = "Jira Connector Design"
+
+[[systems.artifacts]]
+kind = "PRD"
 path = "docs/components/connectors/collaboration/m365/specs/PRD.md"
 name = "Microsoft 365 Connector PRD"
 

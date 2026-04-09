@@ -1,0 +1,738 @@
+version: 6.60.9
+
+type: DeclarativeSource
+
+check:
+  type: CheckStream
+  stream_names:
+    - jira_projects
+
+definitions:
+  auth:
+    type: BasicHttpAuthenticator
+    username: "{{ config['jira_email'] }}"
+    password: "{{ config['jira_api_token'] }}"
+
+  base_requester:
+    type: HttpRequester
+    url_base: "{{ config['jira_instance_url'] }}"
+    http_method: GET
+    authenticator:
+      $ref: "#/definitions/auth"
+    error_handler:
+      type: DefaultErrorHandler
+      backoff_strategies:
+        - type: WaitTimeFromHeader
+          header: Retry-After
+      response_filters:
+        - type: HttpResponseFilter
+          action: RETRY
+          http_codes: [429, 503]
+        - type: HttpResponseFilter
+          action: FAIL
+          http_codes: [401, 403]
+
+  add_fields:
+    type: AddFields
+    fields:
+      - path: [tenant_id]
+        value: "{{ config['insight_tenant_id'] }}"
+      - path: [source_id]
+        value: "{{ config['insight_source_id'] }}"
+
+  paginator:
+    type: DefaultPaginator
+    page_size_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: maxResults
+    page_token_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: startAt
+    pagination_strategy:
+      type: OffsetIncrement
+      page_size: 50
+
+  search_paginator:
+    type: DefaultPaginator
+    page_size_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: maxResults
+    page_token_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: nextPageToken
+    pagination_strategy:
+      type: CursorPagination
+      cursor_value: "{{ response.get('nextPageToken', '') }}"
+      stop_condition: "{{ not response.get('nextPageToken') }}"
+
+  agile_paginator:
+    type: DefaultPaginator
+    page_size_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: maxResults
+    page_token_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: startAt
+    pagination_strategy:
+      type: OffsetIncrement
+      page_size: 50
+
+  child_paginator:
+    type: DefaultPaginator
+    page_size_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: maxResults
+    page_token_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: startAt
+    pagination_strategy:
+      type: OffsetIncrement
+      page_size: 100
+
+  user_paginator:
+    type: DefaultPaginator
+    page_size_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: maxResults
+    page_token_option:
+      type: RequestOption
+      inject_into: request_parameter
+      field_name: startAt
+    pagination_strategy:
+      type: OffsetIncrement
+      page_size: 200
+
+  # --- Schemas ---
+
+  jira_projects_schema:
+    type: object
+    $schema: http://json-schema.org/schema#
+    properties:
+      unique_key: {}
+      tenant_id: {}
+      source_id: {}
+      project_id: {}
+      project_key: {}
+      name: {}
+      lead_account_id: {}
+      project_type: {}
+      style: {}
+      archived: {}
+      collected_at: {}
+    additionalProperties: true
+
+  jira_user_schema:
+    type: object
+    $schema: http://json-schema.org/schema#
+    properties:
+      unique_key: {}
+      tenant_id: {}
+      source_id: {}
+      account_id: {}
+      email: {}
+      display_name: {}
+      account_type: {}
+      active: {}
+    additionalProperties: true
+
+  jira_issue_schema:
+    type: object
+    $schema: http://json-schema.org/schema#
+    properties:
+      unique_key: {}
+      tenant_id: {}
+      source_id: {}
+      jira_id: {}
+      id_readable: {}
+      project_key: {}
+      issue_type: {}
+      reporter_id: {}
+      due_date: {}
+      parent_id: {}
+      created: {}
+      updated: {}
+      custom_fields_json: {}
+    additionalProperties: true
+
+  jira_issue_history_schema:
+    type: object
+    $schema: http://json-schema.org/schema#
+    properties:
+      unique_key: {}
+      tenant_id: {}
+      source_id: {}
+      id_readable: {}
+      author_account_id: {}
+      changelog_id: {}
+      created_at: {}
+      items: {}
+    additionalProperties: true
+
+  jira_comments_schema:
+    type: object
+    $schema: http://json-schema.org/schema#
+    properties:
+      unique_key: {}
+      tenant_id: {}
+      source_id: {}
+      comment_id: {}
+      id_readable: {}
+      author_account_id: {}
+      created: {}
+      updated: {}
+      body: {}
+    additionalProperties: true
+
+  jira_worklogs_schema:
+    type: object
+    $schema: http://json-schema.org/schema#
+    properties:
+      unique_key: {}
+      tenant_id: {}
+      source_id: {}
+      worklog_id: {}
+      id_readable: {}
+      author_account_id: {}
+      started: {}
+      time_spent_seconds: {}
+      comment: {}
+      collected_at: {}
+    additionalProperties: true
+
+  jira_fields_schema:
+    type: object
+    $schema: http://json-schema.org/schema#
+    properties:
+      unique_key: {}
+      tenant_id: {}
+      source_id: {}
+      field_id: {}
+      name: {}
+      custom: {}
+      schema_type: {}
+      schema_items: {}
+      schema_custom: {}
+    additionalProperties: true
+
+  jira_sprints_schema:
+    type: object
+    $schema: http://json-schema.org/schema#
+    properties:
+      unique_key: {}
+      tenant_id: {}
+      source_id: {}
+      sprint_id: {}
+      board_id: {}
+      sprint_name: {}
+      state: {}
+      start_date: {}
+      end_date: {}
+      complete_date: {}
+      collected_at: {}
+    additionalProperties: true
+
+streams:
+  # --- Stream 0: _boards (internal, parent for jira_sprints) ---
+  - type: DeclarativeStream
+    name: _boards
+    primary_key:
+      - id
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - values
+      paginator:
+        $ref: "#/definitions/agile_paginator"
+      requester:
+        $ref: "#/definitions/base_requester"
+        path: /rest/agile/1.0/board
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        properties:
+          id:
+            type: [integer, "null"]
+          name:
+            type: [string, "null"]
+          type:
+            type: [string, "null"]
+          location:
+            type: [object, "null"]
+        additionalProperties: true
+
+  # --- Stream 1: jira_fields (Full Refresh, no pagination) ---
+  - type: DeclarativeStream
+    name: jira_fields
+    primary_key:
+      - unique_key
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+      paginator:
+        type: NoPagination
+      requester:
+        $ref: "#/definitions/base_requester"
+        path: /rest/api/3/field
+    transformations:
+      - $ref: "#/definitions/add_fields"
+      - type: AddFields
+        fields:
+          - path: [unique_key]
+            value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['id'] }}"
+          - path: [field_id]
+            value: "{{ record['id'] }}"
+          - path: [name]
+            value: "{{ record.get('name') }}"
+          - path: [custom]
+            value: "{{ record.get('custom') }}"
+          - path: [schema_type]
+            value: "{{ record.get('schema', {}).get('type') }}"
+          - path: [schema_items]
+            value: "{{ record.get('schema', {}).get('items') }}"
+          - path: [schema_custom]
+            value: "{{ record.get('schema', {}).get('custom') }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $ref: "#/definitions/jira_fields_schema"
+
+  # --- Stream 2: jira_projects (Full Refresh) ---
+  - type: DeclarativeStream
+    name: jira_projects
+    primary_key:
+      - unique_key
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - values
+      paginator:
+        $ref: "#/definitions/paginator"
+      requester:
+        $ref: "#/definitions/base_requester"
+        path: /rest/api/3/project/search
+    transformations:
+      - $ref: "#/definitions/add_fields"
+      - type: AddFields
+        fields:
+          - path: [unique_key]
+            value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['id'] }}"
+          - path: [project_id]
+            value: "{{ record['id'] }}"
+          - path: [project_key]
+            value: "{{ record['key'] }}"
+          - path: [lead_account_id]
+            value: "{{ record.get('lead', {}).get('accountId') }}"
+          - path: [project_type]
+            value: "{{ record.get('projectTypeKey') }}"
+          - path: [style]
+            value: "{{ record.get('style') }}"
+          - path: [archived]
+            value: "{{ record.get('archived', false) }}"
+          - path: [collected_at]
+            value: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z' }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $ref: "#/definitions/jira_projects_schema"
+
+  # --- Stream 3: jira_user (Full Refresh) ---
+  - type: DeclarativeStream
+    name: jira_user
+    primary_key:
+      - unique_key
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+      paginator:
+        $ref: "#/definitions/user_paginator"
+      requester:
+        $ref: "#/definitions/base_requester"
+        path: /rest/api/3/users/search
+    transformations:
+      - $ref: "#/definitions/add_fields"
+      - type: AddFields
+        fields:
+          - path: [unique_key]
+            value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['accountId'] }}"
+          - path: [account_id]
+            value: "{{ record['accountId'] }}"
+          - path: [email]
+            value: "{{ record.get('emailAddress') }}"
+          - path: [display_name]
+            value: "{{ record.get('displayName') }}"
+          - path: [account_type]
+            value: "{{ record.get('accountType') }}"
+          - path: [active]
+            value: "{{ record.get('active') }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $ref: "#/definitions/jira_user_schema"
+
+  # --- Stream 4: jira_issue (Incremental) ---
+  - type: DeclarativeStream
+    name: jira_issue
+    primary_key:
+      - unique_key
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - issues
+      paginator:
+        $ref: "#/definitions/search_paginator"
+      requester:
+        $ref: "#/definitions/base_requester"
+        path: /rest/api/3/search/jql
+        request_parameters:
+          jql: >-
+            project IN ({{ config['jira_project_keys'] }}) AND updated >= "{{ stream_slice.start_time }}" AND updated <= "{{ stream_slice.end_time }}" ORDER BY updated ASC
+          maxResults: "{{ config.get('jira_page_size', 50) }}"
+          expand: names
+          fields: "*all"
+    incremental_sync:
+      type: DatetimeBasedCursor
+      cursor_field: updated
+      cursor_datetime_formats:
+        - "%Y-%m-%dT%H:%M:%S.%f%z"
+        - "%Y-%m-%d %H:%M"
+        - "%Y-%m-%d"
+      datetime_format: "%Y-%m-%d %H:%M"
+      cursor_granularity: PT1M
+      start_datetime:
+        type: MinMaxDatetime
+        datetime: "{{ config.get('jira_start_date', '2020-01-01') }}"
+        datetime_format: "%Y-%m-%d"
+      end_datetime:
+        type: MinMaxDatetime
+        datetime: "{{ now_utc().strftime('%Y-%m-%d %H:%M') }}"
+        datetime_format: "%Y-%m-%d %H:%M"
+      step: P30D
+      lookback_window: PT1H
+    transformations:
+      - $ref: "#/definitions/add_fields"
+      - type: AddFields
+        fields:
+          - path: [unique_key]
+            value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['key'] }}"
+          - path: [jira_id]
+            value: "{{ record['id'] }}"
+          - path: [id_readable]
+            value: "{{ record['key'] }}"
+          - path: [project_key]
+            value: "{{ record.get('fields', {}).get('project', {}).get('key') }}"
+          - path: [issue_type]
+            value: "{{ record.get('fields', {}).get('issuetype', {}).get('name') }}"
+          - path: [reporter_id]
+            value: "{{ record.get('fields', {}).get('reporter', {}).get('accountId') }}"
+          - path: [due_date]
+            value: "{{ record.get('fields', {}).get('duedate') }}"
+          - path: [parent_id]
+            value: "{{ record.get('fields', {}).get('parent', {}).get('key') }}"
+          - path: [created]
+            value: "{{ record.get('fields', {}).get('created') }}"
+          - path: [updated]
+            value: "{{ record.get('fields', {}).get('updated') }}"
+          - path: [custom_fields_json]
+            value: "{{ record.get('fields', {}) | tojson }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $ref: "#/definitions/jira_issue_schema"
+
+  # --- Stream 5: jira_issue_history (Substream of jira_issue) ---
+  - type: DeclarativeStream
+    name: jira_issue_history
+    primary_key:
+      - unique_key
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - values
+      paginator:
+        $ref: "#/definitions/child_paginator"
+      requester:
+        $ref: "#/definitions/base_requester"
+        path: >-
+          /rest/api/3/issue/{{ stream_partition.id_readable }}/changelog
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            stream:
+              $ref: "#/streams/4"
+            parent_key: id_readable
+            partition_field: id_readable
+    transformations:
+      - $ref: "#/definitions/add_fields"
+      - type: AddFields
+        fields:
+          - path: [unique_key]
+            value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['id'] }}"
+          - path: [id_readable]
+            value: "{{ stream_partition.id_readable }}"
+          - path: [author_account_id]
+            value: "{{ record.get('author', {}).get('accountId') }}"
+          - path: [changelog_id]
+            value: "{{ record['id'] }}"
+          - path: [created_at]
+            value: "{{ record.get('created') }}"
+          - path: [items]
+            value: "{{ record.get('items', []) | tojson }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $ref: "#/definitions/jira_issue_history_schema"
+
+  # --- Stream 6: jira_comments (Substream of jira_issue) ---
+  - type: DeclarativeStream
+    name: jira_comments
+    primary_key:
+      - unique_key
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - comments
+      paginator:
+        $ref: "#/definitions/paginator"
+      requester:
+        $ref: "#/definitions/base_requester"
+        path: >-
+          /rest/api/3/issue/{{ stream_partition.id_readable }}/comment
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            stream:
+              $ref: "#/streams/4"
+            parent_key: id_readable
+            partition_field: id_readable
+    transformations:
+      - $ref: "#/definitions/add_fields"
+      - type: AddFields
+        fields:
+          - path: [unique_key]
+            value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['id'] }}"
+          - path: [comment_id]
+            value: "{{ record['id'] }}"
+          - path: [id_readable]
+            value: "{{ stream_partition.id_readable }}"
+          - path: [author_account_id]
+            value: "{{ record.get('author', {}).get('accountId') }}"
+          - path: [created]
+            value: "{{ record.get('created') }}"
+          - path: [updated]
+            value: "{{ record.get('updated') }}"
+          - path: [body]
+            value: "{{ record.get('body', {}) | tojson }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $ref: "#/definitions/jira_comments_schema"
+
+  # --- Stream 7: jira_worklogs (Substream of jira_issue) ---
+  - type: DeclarativeStream
+    name: jira_worklogs
+    primary_key:
+      - unique_key
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - worklogs
+      paginator:
+        $ref: "#/definitions/child_paginator"
+      requester:
+        $ref: "#/definitions/base_requester"
+        path: >-
+          /rest/api/3/issue/{{ stream_partition.id_readable }}/worklog
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            stream:
+              $ref: "#/streams/4"
+            parent_key: id_readable
+            partition_field: id_readable
+    transformations:
+      - $ref: "#/definitions/add_fields"
+      - type: AddFields
+        fields:
+          - path: [unique_key]
+            value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['id'] }}"
+          - path: [worklog_id]
+            value: "{{ record['id'] }}"
+          - path: [id_readable]
+            value: "{{ stream_partition.id_readable }}"
+          - path: [author_account_id]
+            value: "{{ record.get('author', {}).get('accountId') }}"
+          - path: [started]
+            value: "{{ record.get('started') }}"
+          - path: [time_spent_seconds]
+            value: "{{ record.get('timeSpentSeconds') }}"
+          - path: [comment]
+            value: "{{ record.get('comment', '') | tojson if record.get('comment') is mapping else record.get('comment', '') }}"
+          - path: [collected_at]
+            value: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z' }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $ref: "#/definitions/jira_worklogs_schema"
+
+  # --- Stream 8: jira_sprints (Substream of _boards) ---
+  - type: DeclarativeStream
+    name: jira_sprints
+    primary_key:
+      - unique_key
+    retriever:
+      type: SimpleRetriever
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path:
+            - values
+      paginator:
+        $ref: "#/definitions/agile_paginator"
+      requester:
+        $ref: "#/definitions/base_requester"
+        path: >-
+          /rest/agile/1.0/board/{{ stream_partition.board_id }}/sprint
+      partition_router:
+        type: SubstreamPartitionRouter
+        parent_stream_configs:
+          - type: ParentStreamConfig
+            stream:
+              $ref: "#/streams/0"
+            parent_key: id
+            partition_field: board_id
+    transformations:
+      - $ref: "#/definitions/add_fields"
+      - type: AddFields
+        fields:
+          - path: [unique_key]
+            value: "{{ config['insight_tenant_id'] }}-{{ config['insight_source_id'] }}-{{ record['id'] }}"
+          - path: [sprint_id]
+            value: "{{ record['id'] }}"
+          - path: [board_id]
+            value: "{{ stream_partition.board_id }}"
+          - path: [sprint_name]
+            value: "{{ record.get('name') }}"
+          - path: [state]
+            value: "{{ record.get('state') }}"
+          - path: [start_date]
+            value: "{{ record.get('startDate') }}"
+          - path: [end_date]
+            value: "{{ record.get('endDate') }}"
+          - path: [complete_date]
+            value: "{{ record.get('completeDate') }}"
+          - path: [collected_at]
+            value: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z' }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        $ref: "#/definitions/jira_sprints_schema"
+
+spec:
+  type: Spec
+  connection_specification:
+    type: object
+    $schema: http://json-schema.org/draft-07/schema#
+    required:
+      - jira_instance_url
+      - jira_email
+      - jira_api_token
+      - insight_tenant_id
+      - insight_source_id
+      - jira_project_keys
+    properties:
+      jira_instance_url:
+        type: string
+        title: Jira Instance URL
+        description: "Jira Cloud instance URL (e.g., https://myorg.atlassian.net)"
+        order: 0
+      jira_email:
+        type: string
+        title: Jira Email
+        description: "Email for Jira API token authentication"
+        order: 1
+      jira_api_token:
+        type: string
+        title: Jira API Token
+        airbyte_secret: true
+        order: 2
+      insight_tenant_id:
+        type: string
+        title: Insights Tenant ID
+        description: "Tenant isolation identifier for the ingestion layer"
+        order: 3
+      insight_source_id:
+        type: string
+        title: Source Instance ID
+        description: "Instance discriminator (e.g., jira-team-alpha)"
+        order: 4
+      jira_project_keys:
+        type: string
+        title: Project Keys
+        description: "Comma-separated project keys to sync (e.g., TC,TNG). Required — Jira Cloud does not allow unbounded queries."
+        order: 5
+      jira_start_date:
+        type: string
+        title: Start Date
+        description: "Earliest date to sync issues from (YYYY-MM-DD). Default: 2020-01-01"
+        default: "2020-01-01"
+        order: 6
+      jira_page_size:
+        type: integer
+        title: Page Size
+        description: "Page size for JQL search (default 50, max 100)"
+        default: 50
+        minimum: 1
+        maximum: 100
+        order: 7
+    additionalProperties: true
+
+concurrency_level:
+  type: ConcurrencyLevel
+  default_concurrency: 3
