@@ -1,5 +1,6 @@
 """GitHub commits stream (GraphQL, incremental, partitioned by repo+branch)."""
 
+import atexit
 import logging
 import os
 import tempfile
@@ -49,6 +50,7 @@ class CommitsStream(GitHubGraphQLStream):
             mode="w", prefix="insight_commits_meta_", suffix=".tsv", delete=False,
         )
         self._commit_meta_path = self._commit_meta_file.name
+        atexit.register(lambda p=self._commit_meta_path: os.unlink(p) if os.path.exists(p) else None)
         self._commit_meta_count: int = 0
         logger.info(f"Commit metadata temp file: {self._commit_meta_path}")
 

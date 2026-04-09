@@ -1,5 +1,6 @@
 """GitHub pull requests stream (GraphQL, incremental, child of repos)."""
 
+import atexit
 import json
 import logging
 import os
@@ -42,11 +43,11 @@ class PullRequestsStream(GitHubGraphQLStream):
         eps = embedded_page_sizes or {}
         self._pr_query = (
             BULK_PR_QUERY
-            .replace("__COMMITS_PAGE_SIZE__", str(eps.get("commits")))
-            .replace("__REVIEWS_PAGE_SIZE__", str(eps.get("reviews")))
-            .replace("__COMMENTS_PAGE_SIZE__", str(eps.get("comments")))
-            .replace("__RT_PAGE_SIZE__", str(eps.get("review_threads")))
-            .replace("__RTC_PAGE_SIZE__", str(eps.get("thread_comments")))
+            .replace("__COMMITS_PAGE_SIZE__", str(eps.get("commits", 10)))
+            .replace("__REVIEWS_PAGE_SIZE__", str(eps.get("reviews", 10)))
+            .replace("__COMMENTS_PAGE_SIZE__", str(eps.get("comments", 10)))
+            .replace("__RT_PAGE_SIZE__", str(eps.get("review_threads", 15)))
+            .replace("__RTC_PAGE_SIZE__", str(eps.get("thread_comments", 2)))
         )
         self._partitions_with_errors: set = set()
         self._child_slice_cache: dict[tuple, dict] = {}
@@ -58,6 +59,7 @@ class PullRequestsStream(GitHubGraphQLStream):
             mode="w", prefix="insight_pr_embedded_", suffix=".jsonl", delete=False,
         )
         self._embedded_data_path = self._embedded_data_file.name
+        atexit.register(lambda p=self._embedded_data_path: os.unlink(p) if os.path.exists(p) else None)
 
     def _query(self) -> str:
         return self._pr_query

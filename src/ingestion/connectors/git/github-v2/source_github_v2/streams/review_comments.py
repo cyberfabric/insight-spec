@@ -44,6 +44,7 @@ class ReviewCommentsStream(GitHubGraphQLStream):
     def __init__(self, parent, **kwargs):
         super().__init__(**kwargs)
         self._parent = parent
+        self._deferred_state_updates: dict[str, str] = {}  # partition_key → pr_updated_at
 
     def _query(self) -> str:
         return PR_REVIEW_THREADS_QUERY
@@ -138,7 +139,7 @@ class ReviewCommentsStream(GitHubGraphQLStream):
             "pr_number": pr_number,
             "pull_request_id": pr_database_id,
             "body": comment_node.get("body"),
-            "filename": comment_node.get("filename"),
+            "filename": comment_node.get("path"),
             "line": comment_node.get("line"),
             "start_line": comment_node.get("startLine"),
             "diff_hunk": comment_node.get("diffHunk"),
@@ -193,14 +194,18 @@ class ReviewCommentsStream(GitHubGraphQLStream):
                 timeout=120,
             )
             if resp.status_code != 200:
-                logger.warning(f"Thread comment overflow failed ({resp.status_code}), skipping remaining")
-                return
+                raise RuntimeError(
+                    f"Thread comment overflow failed ({resp.status_code}) "
+                    f"for thread {thread_id[:20]}...: {resp.text[:200]}"
+                )
 
             body = resp.json()
             self._update_graphql_rate_limit(body, resp)
             if "errors" in body and not body.get("data"):
-                logger.warning(f"Thread comment overflow GraphQL error: {body['errors']}")
-                return
+                raise RuntimeError(
+                    f"Thread comment overflow GraphQL error "
+                    f"for thread {thread_id[:20]}...: {body['errors']}"
+                )
 
             payload = body.get("data", {}) or {}
             node_data = payload.get("node") or {}
@@ -264,6 +269,12 @@ class ReviewCommentsStream(GitHubGraphQLStream):
                     f"Review comments {owner}/{repo} PR#{pr_number}: "
                     f"{embedded_count} from {len(thread_nodes)} threads (complete)"
                 )
+                # Mark slice as synced even if zero comments were emitted, so we
+                # don't re-fetch PRs that have reviews but no inline comments.
+                pk = s.get("partition_key", "")
+                pr_updated_at = s.get("pr_updated_at", "")
+                if pk and pr_updated_at:
+                    self._deferred_state_updates[pk] = pr_updated_at
                 return
 
             # Step 3: overflow or full fetch if embedded data was missing/incomplete
@@ -310,6 +321,12 @@ class ReviewCommentsStream(GitHubGraphQLStream):
         pr_updated_at = latest_record.get("pull_request_updated_at", "")
         if partition_key and pr_updated_at:
             current_stream_state[partition_key] = {"synced_at": pr_updated_at}
+        # Apply deferred state for slices that emitted zero records
+        if self._deferred_state_updates:
+            for key, updated_at in self._deferred_state_updates.items():
+                if key not in current_stream_state:
+                    current_stream_state[key] = {"synced_at": updated_at}
+            self._deferred_state_updates.clear()
         return current_stream_state
 
     def get_json_schema(self) -> Mapping[str, Any]:
