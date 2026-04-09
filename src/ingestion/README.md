@@ -292,7 +292,7 @@ src/ingestion/
 │   └── wait-for-services.sh        #   kubectl wait for pods
 │
 └── tools/
-    ├── toolbox/                     # insight-toolbox Docker image (ghcr.io/cyberfabric/insight-toolbox)
+    ├── toolbox/                     # insight-toolbox Docker image (insight-toolbox)
     │   ├── Dockerfile               #   python + dbt + kubectl + yq
     │   └── build.sh                 #   Build + push to GHCR (or load into Kind)
     └── declarative-connector/       # Local connector debugging
@@ -419,39 +419,14 @@ export KUBECONFIG=/path/to/your/kubeconfig
 ./up.sh   # Uses ENV=production, applies production Helm values
 ```
 
-### Step 2: Set Up GHCR Image Pull
+### Step 2: Build and Load Toolbox Image
 
-Argo workflow templates use `ghcr.io/cyberfabric/insight-toolbox:latest` for dbt jobs.
-The image is private, so the cluster needs a pull secret.
+Argo workflow templates use `insight-toolbox:local` for dbt jobs.
+The image is built locally and loaded into the cluster:
 
-```bash
-# 1. Create a GitHub Personal Access Token (PAT) at https://github.com/settings/tokens
-#    Required scopes: read:packages (to pull), write:packages (to push updates)
-
-# 2. Create pull secret in argo and data namespaces
-kubectl create secret docker-registry ghcr-pull \
-  --docker-server=https://ghcr.io \
-  --docker-username=YOUR_GITHUB_USERNAME \
-  --docker-password=YOUR_PAT \
-  -n argo
-
-kubectl create secret docker-registry ghcr-pull \
-  --docker-server=https://ghcr.io \
-  --docker-username=YOUR_GITHUB_USERNAME \
-  --docker-password=YOUR_PAT \
-  -n data
-
-# 3. Patch default service account so all pods can pull
-kubectl patch serviceaccount default -n argo -p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}'
-kubectl patch serviceaccount default -n data -p '{"imagePullSecrets": [{"name": "ghcr-pull"}]}'
-```
-
-To rebuild and push the toolbox image (after dbt model changes):
 ```bash
 cd src/ingestion
-docker buildx build --platform linux/amd64 \
-  -t ghcr.io/cyberfabric/insight-toolbox:latest \
-  -f tools/toolbox/Dockerfile --push .
+./tools/toolbox/build.sh   # Builds and loads into Kind (done automatically by up.sh)
 ```
 
 ### Step 3: Create and Apply Secrets
@@ -517,4 +492,4 @@ ClickHouse uses `strategy: Recreate` — the old pod is terminated before the ne
 |----------|---------|-------------|
 | `ENV` | `local` | `local` (Kind) or `production` (existing K8s cluster) |
 | `KUBECONFIG` | `~/.kube/insight.kubeconfig` | Path to kubeconfig |
-| `TOOLBOX_IMAGE` | `insight-toolbox:local` | Docker image for toolbox (production: `ghcr.io/cyberfabric/insight-toolbox:latest`) |
+| `TOOLBOX_IMAGE` | `insight-toolbox:local` | Docker image for toolbox (production: `insight-toolbox:latest`) |

@@ -6,8 +6,6 @@ metadata:
   labels:
     app.kubernetes.io/part-of: ingestion
 spec:
-  imagePullSecrets:
-    - name: ghcr-pull
   entrypoint: run
   templates:
     - name: run
@@ -21,7 +19,7 @@ spec:
             default: "8123"
       activeDeadlineSeconds: 1800
       script:
-        image: ghcr.io/cyberfabric/insight-toolbox:latest
+        image: insight-toolbox:local
         imagePullPolicy: IfNotPresent
         command: [bash]
         env:
