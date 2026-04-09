@@ -34,7 +34,7 @@ upload_connector() {
     conn_type=$(yq -r '.type // "nocode"' "$descriptor_path")
     if [[ "$conn_type" == "cdk" ]]; then
       echo "  CDK connector detected — delegating to build-connector.sh"
-      "${SCRIPT_DIR}/build-connector.sh" "$connector"
+      "${TOOLKIT_DIR}/build-connector.sh" "$connector"
       return $?
     fi
   fi
