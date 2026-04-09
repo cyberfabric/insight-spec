@@ -384,11 +384,13 @@ class CommitsStream(GitHubGraphQLStream):
 
         record_cursor = latest_record.get(self.cursor_field, "")
         current_cursor = current_stream_state.get(partition_key, {}).get(self.cursor_field, "")
+        head_sha = latest_record.get("head_sha", "")
+        cursor_entry = dict(current_stream_state.get(partition_key, {}))
         if record_cursor > current_cursor:
-            head_sha = latest_record.get("head_sha", "")
-            cursor_entry: dict[str, str] = {self.cursor_field: record_cursor}
-            if head_sha:
-                cursor_entry["head_sha"] = head_sha
+            cursor_entry[self.cursor_field] = record_cursor
+        if head_sha:
+            cursor_entry["head_sha"] = head_sha
+        if cursor_entry:
             current_stream_state[partition_key] = cursor_entry
 
             # Mirror cursor to skipped siblings (same HEAD SHA)
