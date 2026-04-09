@@ -28,6 +28,17 @@ upload_connector() {
   local manifest_path="${connector_dir}/connector.yaml"
   local descriptor_path="${connector_dir}/descriptor.yaml"
 
+  # Auto-detect connector type and route accordingly
+  if [[ -f "$descriptor_path" ]]; then
+    local conn_type
+    conn_type=$(yq -r '.type // "nocode"' "$descriptor_path")
+    if [[ "$conn_type" == "cdk" ]]; then
+      echo "  CDK connector detected — delegating to build-connector.sh"
+      "${SCRIPT_DIR}/build-connector.sh" "$connector"
+      return $?
+    fi
+  fi
+
   if [[ ! -f "$manifest_path" ]]; then
     echo "  SKIP: no manifest at ${manifest_path}"
     return 0
@@ -146,17 +157,19 @@ PYTHON
 # Main
 # ---------------------------------------------------------------------------
 if [[ "${1:-}" == "--all" ]]; then
-  manifests=$(find "$CONNECTORS_DIR" -name "connector.yaml" 2>/dev/null)
-  if [[ -z "$manifests" ]]; then
-    echo "  No connector manifests found"
-    exit 0
-  fi
-  for manifest in $manifests; do
-    connector_dir=$(dirname "$manifest")
+  # Find all connectors by descriptor.yaml (covers both nocode and CDK)
+  found=0
+  while IFS= read -r -d '' desc; do
+    connector_dir=$(dirname "$desc")
     connector="${connector_dir#${CONNECTORS_DIR}/}"
     echo "  Registering connector: $connector"
     upload_connector "$connector"
-  done
+    found=1
+  done < <(find "$CONNECTORS_DIR" -name "descriptor.yaml" -print0 2>/dev/null)
+  if [[ "$found" -eq 0 ]]; then
+    echo "  No connectors found"
+    exit 0
+  fi
 else
   upload_connector "${1:?Usage: $0 <connector_path> | --all}"
 fi

@@ -12,9 +12,9 @@ Checks that a connector package meets all requirements from the connector spec.
 Read connector package files and verify each item:
 
 ### Structure
-- [ ] `connector.yaml` exists (nocode) or `src/source_<name>/source.py` exists (CDK)
-- [ ] `descriptor.yaml` exists with required fields (name, version, type, schedule, dbt_select, connection)
-- [ ] `credentials.yaml.example` exists with `insight_source_id`
+- [ ] `connector.yaml` exists (nocode) or `Dockerfile` + `source_<name>/source.py` exists (CDK)
+- [ ] `descriptor.yaml` exists with required fields (name, version, type, schedule, workflow, dbt_select, connection.namespace)
+- [ ] K8s Secret example in `secrets/connectors/<name>.yaml.example` with `insight_source_id` annotation
 - [ ] `dbt/` directory with at least one .sql model and schema.yml
 
 ### Manifest (nocode)
@@ -35,13 +35,17 @@ Read connector package files and verify each item:
 - [ ] `parse_response()` injects `tenant_id`, `source_id`, `unique_key`
 - [ ] `unique_key` includes `tenant_id` and `source_id`
 - [ ] `spec.json` has `insight_tenant_id` and `insight_source_id` as required
+- [ ] All config fields in `spec.json` use source-specific prefixes (`insight_*`, `github_*`, `jira_*`, etc.)
+- [ ] No bare field names (`token`, `client_id`, `tenant_id`, `start_date`, etc.) in `connectionSpecification.properties`
 
 ### Descriptor
 - [ ] `name` matches directory name
 - [ ] `connection.namespace` = `bronze_<name>`
-- [ ] `dbt_select` includes both connector tag and `tag:silver`
+- [ ] `dbt_select` includes connector tag with `+` suffix (e.g., `tag:m365+`)
 - [ ] `schedule` is valid cron expression
-- [ ] `connection.streams` lists all streams from manifest
+- [ ] `workflow` field is present
+- [ ] No `streams` block (streams are owned by Airbyte connector, discovered via `airbyte discover`)
+- [ ] No `silver_targets` block (Silver targets are determined by dbt model tags via `dbt_select`)
 
 ### dbt Models
 - [ ] Model name follows `<connector>__<domain>.sql` pattern
@@ -69,8 +73,8 @@ Read connector package files and verify each item:
 === Connector Validation: <name> ===
 
   Structure:    PASS (4/4)
-  Manifest:     PASS (12/12)  or  CDK: PASS (3/3)
-  Descriptor:   PASS (5/5)
+  Manifest:     PASS (12/12)  or  CDK: PASS (5/5)
+  Descriptor:   PASS (7/7)
   dbt Models:   PASS (7/7)
   dbt Schema:   PASS (4/4)
   Credentials:  PASS (3/3)
