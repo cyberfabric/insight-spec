@@ -51,6 +51,16 @@ Standalone specification for the Jira (Task Tracking) connector.
 
 ---
 
+> **Phase 1 Implementation Notes**
+>
+> - The `updated` field stores the **full ISO timestamp** in Bronze without truncation. The cursor uses `%Y-%m-%d %H:%M` format for JQL (minute precision) via Airbyte `cursor_datetime_formats` / `datetime_format` separation.
+> - `jira_issue_history`: the `issue_jira_id` field is NOT available at Bronze level due to the `SubstreamPartitionRouter` limitation (no `extra_fields` support). Must be resolved via JOIN with `jira_issue` on `id_readable` in Silver/dbt.
+> - `jira_sprints`: `board_name` and `project_key` are NOT available at Bronze level due to the `SubstreamPartitionRouter` limitation. Must be resolved via JOIN with board/project reference data in Silver/dbt.
+> - `jira_issue_ext` and `jira_issue_links` Bronze tables are not populated by the connector in Phase 1. Data stored in `jira_issue.custom_fields_json` (includes all fields including `issuelinks`); denormalization to separate EAV/link tables deferred to Silver/dbt.
+> - Manifest version: `6.60.9`. Start datetime should be configured per customer data range (e.g. `2026-01-01`).
+
+---
+
 ## Bronze Tables
 
 ### `jira_issue` — Issue identifiers and core fields
@@ -97,6 +107,8 @@ Every state transition, reassignment, and field update is a separate row. Collec
 ---
 
 ### `jira_issue_ext` — Custom fields (key-value)
+
+> **Phase 1**: This table is not populated by the connector. Custom fields are stored as raw JSON in `jira_issue.custom_fields_json`. Denormalization to this EAV table is deferred to Silver/dbt. See [DESIGN.md](specs/DESIGN.md) Phase 1 Limitations.
 
 Stores per-issue custom field values that don't fit the core schema. Follows the same key-value pattern as `git_repositories_ext`.
 
@@ -173,6 +185,8 @@ Collected from `GET /rest/api/3/project`.
 
 ### `jira_issue_links` — Issue dependencies
 
+> **Phase 1**: This table is not populated by the connector. Issue links are included in `jira_issue.custom_fields_json` (within `fields.issuelinks`). Denormalization to this table is deferred to Silver/dbt. See [DESIGN.md](specs/DESIGN.md) Phase 1 Limitations.
+
 Collected from `fields.issuelinks` in issue response.
 
 | Field | Type | Description |
@@ -225,6 +239,8 @@ Collected from `GET /rest/agile/1.0/board/{boardId}/sprint`. Board list from `GE
 ---
 
 ### `jira_collection_runs` — Connector execution log
+
+> **Phase 1**: This table is not populated by the connector. Sync monitoring is handled by the Airbyte platform. See [DESIGN.md](specs/DESIGN.md) Phase 1 Limitations.
 
 | Field | Type | Description |
 |-------|------|-------------|

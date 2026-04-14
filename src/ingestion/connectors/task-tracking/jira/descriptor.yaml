@@ -1,0 +1,7 @@
+name: jira
+version: "1.0"
+schedule: "0 3 * * *"
+dbt_select: "tag:jira+"
+workflow: sync
+connection:
+  namespace: bronze_jira

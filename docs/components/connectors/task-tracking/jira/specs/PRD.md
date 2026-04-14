@@ -36,6 +36,7 @@
 - [11. Assumptions](#11-assumptions)
 - [12. Risks](#12-risks)
 - [13. Resolved Questions](#13-resolved-questions)
+  - [13.1 Phase 1 Scope](#131-phase-1-scope)
 - [14. Non-Applicable Requirements](#14-non-applicable-requirements)
 
 <!-- /toc -->
@@ -582,6 +583,19 @@ All timestamps persisted in the Bronze layer **MUST** be stored in UTC (ISO 8601
 | Comment body content may contain sensitive information | Extracted comments may include customer names, internal discussions, or code snippets | Data access controls and retention policies are platform responsibilities; document that comment body is extracted for collaboration analytics, not content archiving |
 
 ## 13. Resolved Questions
+
+### 13.1 Phase 1 Scope
+
+Functional requirements, use cases, and acceptance criteria above describe the **full target scope** of the Jira connector (Cloud + Server/Data Center). Phase 1 implements the subset below. Server/Data Center support is deferred to a future iteration.
+
+| Capability | Phase 1 | Future |
+|------------|---------|--------|
+| Jira Cloud (API v3) | In scope | — |
+| Jira Server / Data Center (API v2) | Out of scope | Separate iteration |
+| Comment body plain text extraction | Deferred to Silver/dbt layer | Bronze-level extraction if needed |
+| Story points field resolution | Deferred to Silver/dbt layer (based on project style) | Bronze-level extraction if needed |
+
+Implementation details and technical limitations are documented in [DESIGN.md](./DESIGN.md) §4 "Phase 1 Limitations and Future Work".
 
 All open questions from the initial draft have been resolved and incorporated into the PRD as concrete requirements:
 
