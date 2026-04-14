@@ -40,8 +40,7 @@
 - [12. Risks](#12-risks)
 - [13. Open Questions](#13-open-questions)
   - [OQ-GH-1: Email privacy handling](#oq-gh-1-email-privacy-handling)
-  - [OQ-GH-2: GraphQL cache retention policy](#oq-gh-2-graphql-cache-retention-policy)
-  - [OQ-GH-3: Review state mapping](#oq-gh-3-review-state-mapping)
+  - [OQ-GH-2: Review state mapping](#oq-gh-2-review-state-mapping)
 
 <!-- /toc -->
 
@@ -62,6 +61,8 @@ Organizations using GitHub as their primary version control platform require the
 A growing need has also emerged for per-file third-party code detection: identifying files within commits that contain vendored libraries, copy-pasted open-source code, or AI-generated content that originated from external sources. Engineering compliance and AI adoption programs require this signal at the individual file level, not only at the commit level. The enrichment design must allow AI detection and license scanning pipelines to attach their results per file without coupling those pipelines to the core data collection process.
 
 ### 1.3 Goals (Business Outcomes)
+
+**Baseline**: No GitHub data is currently collected (greenfield). All targets apply from v1.0 GA.
 
 - Collect all repositories, branches, commits, pull requests, reviewer actions, and comments from GitHub organizations. **Target**: complete initial collection of an organization with up to 500 repositories within 8 hours under standard GitHub rate limit conditions.
 - Store collected data in the unified `git_*` Silver tables using `data_source = "insight_github"` as the discriminator, enabling cross-platform queries alongside Bitbucket and GitLab data.
@@ -183,9 +184,7 @@ A growing need has also emerged for per-file third-party code detection: identif
 - Collection of PR-to-commit linkage.
 - Extraction of ticket references (e.g., Jira issue keys, GitHub issue numbers) from PR titles, descriptions, and commit messages.
 - Incremental collection strategy: only fetch data changed since the last run.
-- Optional API response caching to reduce redundant API calls.
 - Checkpoint-based fault tolerance: save progress after each repository, support resume on failure.
-- Recording of connector execution statistics in a collection runs log.
 - Identity resolution for commit authors and PR reviewers via the Identity Manager.
 - A per-file enrichment table that external pipelines (AI detection, license scanning) can populate with analysis results for each collected commit file.
 
@@ -233,6 +232,8 @@ The connector SHOULD collect GitHub-specific repository metrics (stars count, fo
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-gh-discover-branches`
 
 The connector MUST enumerate all branches per repository and track branch state to support incremental commit collection.
+
+**Rationale**: Branch enumeration is a prerequisite for per-branch incremental commit collection and enables analytics on branch activity patterns.
 
 **Actors**: `cpt-insightspec-actor-gh-api`
 
@@ -290,7 +291,7 @@ The connector MUST populate PR-level statistics: commit count, comment count, an
 
 - [ ] `p2` - **ID**: `cpt-insightspec-fr-gh-extract-tickets`
 
-The connector MUST extract ticket references (e.g., Jira issue keys, GitHub issue numbers) from PR titles, descriptions, and commit messages and store them in the ticket references table.
+The connector MUST extract ticket references (e.g., Jira issue keys, GitHub issue numbers) from PR titles, descriptions, and commit messages and store them in the ticket references table. Extraction timing and implementation details are specified in [DESIGN.md](./DESIGN.md).
 
 **Actors**: `cpt-insightspec-actor-gh-analytics-eng`
 
@@ -299,6 +300,8 @@ The connector MUST extract ticket references (e.g., Jira issue keys, GitHub issu
 - [ ] `p1` - **ID**: `cpt-insightspec-fr-gh-pr-commits`
 
 The connector MUST collect the set of commits associated with each pull request.
+
+**Rationale**: PR-to-commit linkage is required for cycle time analysis, review scope assessment, and tracing individual commits to the PR workflow that introduced them.
 
 **Actors**: `cpt-insightspec-actor-gh-analytics-eng`
 
@@ -394,6 +397,8 @@ The connector MUST maintain per-branch commit cursors (last collected commit has
 
 The connector MUST stop fetching commits for a branch when it encounters a commit already present in the collection state. The connector MUST stop fetching pull requests when it encounters a PR whose update timestamp is before the last collection cursor.
 
+**Rationale**: Early exit avoids redundant API calls on incremental runs, significantly reducing rate limit consumption and run time for active repositories.
+
 **Actors**: `cpt-insightspec-actor-gh-platform-engineer`
 
 #### Configurable History Depth Limit
@@ -403,14 +408,6 @@ The connector MUST stop fetching commits for a branch when it encounters a commi
 The connector MUST support a configurable `history_since_date` parameter that limits commit collection to commits authored on or after a specified date. When set, the first full collection run MUST NOT fetch commits older than this date. Subsequent incremental runs are unaffected and continue from the stored cursor.
 
 **Rationale**: Large repositories with years of history can result in initial collection runs that exceed acceptable time budgets. A configurable date cutoff provides a practical onboarding escape hatch and keeps initial runs predictable.
-
-**Actors**: `cpt-insightspec-actor-gh-platform-engineer`
-
-#### Record Collection Run Metadata
-
-- [ ] `p2` - **ID**: `cpt-insightspec-fr-gh-collection-runs`
-
-The connector MUST record the start time, end time, status, and item counts (repositories processed, commits collected, PRs collected, errors encountered) for each collection run in the collection runs log table.
 
 **Actors**: `cpt-insightspec-actor-gh-platform-engineer`
 
@@ -440,14 +437,6 @@ The connector MUST checkpoint its progress after completing each repository so t
 
 **Actors**: `cpt-insightspec-actor-gh-platform-engineer`
 
-#### Optional API Response Caching
-
-- [ ] `p3` - **ID**: `cpt-insightspec-fr-gh-api-cache`
-
-The connector SHOULD support optional caching of GraphQL API responses to reduce redundant API calls for frequently accessed, slow-changing data (e.g., repository metadata). Caching MUST be configurable (enabled/disabled, TTL per data category).
-
-**Actors**: `cpt-insightspec-actor-gh-platform-engineer`
-
 ---
 
 ## 6. Non-Functional Requirements
@@ -472,7 +461,7 @@ The connector MUST operate within GitHub's API rate limits. It MUST implement ex
 
 - [ ] `p1` - **ID**: `cpt-insightspec-nfr-gh-schema-compliance`
 
-All collected data MUST be stored in the unified `git_*` Silver tables defined in `docs/components/connectors/git/README.md`. The connector MUST NOT create GitHub-specific Silver tables (the Bronze `github_graphql_cache` table is the only GitHub-specific table).
+All collected data MUST be stored in the unified `git_*` tables defined in `docs/components/connectors/git/README.md`. The connector MUST NOT create GitHub-specific analytics tables. Storage layering details are specified in [DESIGN.md](./DESIGN.md).
 
 #### Data Source Discriminator
 
@@ -508,11 +497,11 @@ Repeated collection of the same data MUST NOT create duplicate rows. The connect
 
 - [ ] `p1` - **ID**: `cpt-insightspec-interface-gh-entrypoint`
 
-**Type**: CLI / Python module
+**Type**: Source connector
 
 **Stability**: stable
 
-**Description**: The connector exposes a `collect` command (or callable) that accepts configuration (organization scope, credentials, schedule parameters) and executes a full or incremental collection run.
+**Description**: The connector implements a standard source protocol (`check`, `discover`, `read`) and runs as an isolated container managed by the orchestrator. Configuration (organization scope, credentials, schedule parameters) is provided via connection settings. Implementation technology details are specified in [DESIGN.md](./DESIGN.md).
 
 **Breaking Change Policy**: Configuration schema changes require a version bump and migration guide.
 
@@ -635,7 +624,6 @@ Repeated collection of the same data MUST NOT create duplicate rows. The connect
 - [ ] Draft PR flag is correctly captured.
 - [ ] Collection continues and completes when one repository returns 404 or one PR returns a malformed response.
 - [ ] Identity resolution populates `person_id` for all commit authors and reviewers with a matching email in the Identity Manager.
-- [ ] Collection run log records correct start time, end time, item counts, and status for each run.
 - [ ] An enrichment pipeline can write per-file AI and license scan results to the per-file enrichment table and those results are queryable alongside core commit file data.
 
 ---
@@ -661,6 +649,7 @@ Repeated collection of the same data MUST NOT create duplicate rows. The connect
 - The unified `git_*` Silver tables (including `git_commits_files_ext`) are pre-provisioned per the schema in `docs/components/connectors/git/README.md`.
 - GitHub's no-reply email addresses (`user@users.noreply.github.com`) are resolved by the Identity Manager via the username fallback.
 - Enrichment pipelines operate independently of the core connector and are responsible for their own scheduling and error handling.
+- Data retention, archival, and lifecycle management (purging) for collected data are owned by the platform-level data governance policy and are out of scope for this connector.
 
 ---
 
@@ -673,7 +662,6 @@ Repeated collection of the same data MUST NOT create duplicate rows. The connect
 | Large repositories with deep commit history | First run takes hours | Support configurable history depth limit; document expected run times |
 | API credentials expire or are revoked | Collection fails with 401/403 | Alert on auth failures; document credential rotation procedure |
 | Enrichment pipelines write stale or duplicate results | Incorrect per-file flags in compliance reports | Enrichment table uses upsert semantics; `collected_at` timestamp enables staleness detection |
-| `github_graphql_cache` table grows unbounded | Storage pressure | Implement configurable TTL and periodic purge (see OQ-GH-2) |
 
 ---
 
@@ -681,49 +669,14 @@ Repeated collection of the same data MUST NOT create duplicate rows. The connect
 
 ### OQ-GH-1: Email privacy handling
 
-GitHub users can configure privacy settings that replace their real email with a no-reply address (e.g., `12345678+username@users.noreply.github.com`).
+**Status**: Resolved (Owner: Platform Engineering, Resolved: 2026-03)
 
-**Question**: Should the connector attempt to extract the numeric GitHub user ID from the no-reply address format as a fallback identity key, or delegate this entirely to the Identity Manager?
-
-**Current approach**: Delegate to Identity Manager via username fallback.
-
-**Consideration**: Extracting the numeric ID from the no-reply address would improve resolution rates without requiring Identity Manager changes.
-
-**Owner**: Platform / Data Engineering team lead
-**Target resolution**: Before DESIGN.md review sign-off
+The connector stores raw author identity fields (email, login, database ID) on commit records. Identity resolution is delegated to the Identity Manager, using email as primary key and GitHub login as fallback. No-reply addresses are handled by the fallback path. For reviews and comments, email is not available — identity resolution uses login and database ID. Implementation details are specified in [DESIGN.md](./DESIGN.md).
 
 ---
 
-### OQ-GH-2: GraphQL cache retention policy
+### OQ-GH-2: Review state mapping
 
-The optional `github_graphql_cache` Bronze table can grow unbounded without a retention policy.
+**Status**: Resolved (Owner: Platform Engineering, Resolved: 2026-03)
 
-**Question**: What is the recommended retention period for cached GraphQL responses?
-
-**Options**:
-1. Short TTL (1–4 hours) for volatile data (commits, PRs)
-2. Long TTL (24 hours) for stable data (repositories, branches)
-3. Periodic purge (delete entries older than 7 days)
-4. No retention policy — manual management
-
-**Current approach**: TTL configurable per data category; no automatic purge implemented.
-
-**Owner**: Platform / Data Engineering team lead
-**Target resolution**: Before production deployment of the connector
-
----
-
-### OQ-GH-3: Review state mapping
-
-GitHub distinguishes four formal review states (`APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`, `DISMISSED`), while Bitbucket supports only `APPROVED`/`UNAPPROVED`.
-
-**Question**: Should `COMMENTED` reviews be stored in `git_pull_requests_reviewers` alongside formal approvals, or filtered out to keep only actionable review states?
-
-**Current approach**: Store all four states; analytics can filter by state as needed.
-
-**Consideration**: `COMMENTED` reviews inflate reviewer participation counts; some analytics want "approver" counts only.
-
-**Consideration**: GitHub's GraphQL API may return a `PENDING` state for a review that has been submitted as a draft but not yet formally submitted. The expected handling of `PENDING` reviews (store, skip, or flag) requires an explicit decision before implementation.
-
-**Owner**: Platform / Data Engineering team lead
-**Target resolution**: Before DESIGN.md review sign-off
+All four formal review states (`APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`, `DISMISSED`) are persisted. `PENDING` reviews (draft reviews not yet formally submitted) are skipped — they are not collected. Analytics consumers filter by state as needed.

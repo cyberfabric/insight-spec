@@ -1,0 +1,72 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/cyberfabric/insight-api-gateway
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  host: ""              # Leave empty for local (no host-based routing)
+  tls:
+    enabled: false
+    secretName: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# OIDC configuration (required for production)
+oidc:
+  issuerUrl: ""           # e.g., https://dev-12345.okta.com/oauth2/default
+  audience: ""            # e.g., api://insight
+  clientId: ""            # Frontend (public) OIDC client ID
+  redirectUri: ""         # e.g., https://insight.example.com/callback
+  # jwksUrl: ""           # Override if JWKS URL differs from {issuer}/v1/keys
+
+# ClickHouse connection
+clickhouse:
+  url: "http://clickhouse.data.svc.cluster.local:8123"
+  database: "gold"
+
+# Set to true to disable authentication (local development only)
+authDisabled: false
+
+# API Gateway settings
+gateway:
+  prefixPath: "/api/v1"
+  corsEnabled: true
+  enableDocs: false     # Set true for dev; disabled by default for production
+  rateLimit:
+    rps: 100
+    burst: 50
+    inFlight: 32
+
+# Health probes
+# Provided by cyberfabric api-gateway module:
+#   GET /health  → {"status":"healthy","timestamp":"..."} (public, no auth)
+#   GET /healthz → "ok" (public, no auth)
+# No separate /ready endpoint — gateway is stateless, healthy = ready.
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5

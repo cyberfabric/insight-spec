@@ -1,462 +1,639 @@
-# BambooHR Connector — Airbyte Declarative Manifest
-# Extracts: employees (custom report), leave requests, field metadata
-# Auth: API Key via Authorization header
-# Sync: full refresh (no incremental — BambooHR is current-state only)
+version: 6.44.0
 
-version: "6.44.0"
+type: DeclarativeSource
+
+check:
+  type: CheckStream
+  stream_names:
+    - meta_fields
 
 definitions:
-  # --- Shared components ---
+  linked:
+    HttpRequester:
+      url_base: https://{{ config['bamboohr_domain'] }}.bamboohr.com/api/v1/
+      authenticator:
+        type: BasicHttpAuthenticator
+        password: x
+        username: "{{ config['bamboohr_api_key'] }}"
+      request_headers:
+        Accept: application/json
+    SimpleRetriever:
+      paginator:
+        type: NoPagination
 
-  base_requester:
-    type: HttpRequester
-    url_base: "https://{{ config['domain'] }}.bamboohr.com/api/v1/"
-    http_method: GET
-    authenticator:
-      type: BasicHttpAuthenticator
-      username: "{{ config['api_key'] }}"
-      password: "x"
-    request_headers:
-      Accept: "application/json"
-    error_handler:
-      type: CompositeErrorHandler
-      error_handlers:
-        - type: DefaultErrorHandler
-          response_filters:
-            - type: HttpResponseFilter
-              http_codes: [429]
-              action: RATE_LIMITED
-          backoff_strategies:
-            - type: WaitTimeFromHeader
-              header: "Retry-After"
-            - type: ExponentialBackoffStrategy
-              factor: 5
-        - type: DefaultErrorHandler
-          response_filters:
-            - type: HttpResponseFilter
-              http_codes: [503]
-              action: RATE_LIMITED
-          backoff_strategies:
-            - type: WaitTimeFromHeader
-              header: "Retry-After"
-            - type: ExponentialBackoffStrategy
-              factor: 5
-        - type: DefaultErrorHandler
-          response_filters:
-            - type: HttpResponseFilter
-              http_codes: [500, 502, 504]
-              action: RETRY
-          backoff_strategies:
-            - type: ExponentialBackoffStrategy
-              factor: 5
-          max_retries: 5
-
-  # --- Stream definitions ---
-
-  employees_stream:
-    type: DeclarativeStream
-    name: "employees"
-    primary_key: "id"
+streams:
+  - type: DeclarativeStream
+    name: employees
     retriever:
       type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
       requester:
-        $ref: "#/definitions/base_requester"
-        path: "reports/custom"
+        type: HttpRequester
+        path: reports/custom
+        url_base:
+          $ref: "#/definitions/linked/HttpRequester/url_base"
         http_method: POST
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          $ref: "#/definitions/linked/HttpRequester/request_headers"
         request_body_json:
-          title: "Insight Employee Sync"
-          fields:
-            # --- Identity & name ---
-            - "id"
-            - "displayName"
-            - "firstName"
-            - "lastName"
-            - "workEmail"
-            - "employeeNumber"
-            # --- Job & org ---
-            - "jobTitle"
-            - "department"
-            - "division"
-            - "status"
-            - "employmentHistoryStatus"
-            # --- Manager / hierarchy ---
-            - "supervisor"
-            - "supervisorEId"
-            - "supervisorEmail"
-            # --- Location ---
-            - "location"
-            - "country"
-            - "city"
-            # --- Dates ---
-            - "hireDate"
-            - "originalHireDate"
-            - "terminationDate"
-            - "lastChanged"
-            # --- Employment ---
-            - "payType"
-            - "standardHoursPerWeek"
+          title: Insight Employee Sync
+          fields: >-
+            {{ ['id', 'displayName', 'firstName', 'lastName', 'workEmail',
+            'employeeNumber', 'jobTitle', 'department', 'division', 'status',
+            'employmentHistoryStatus', 'supervisor', 'supervisorEId',
+            'supervisorEmail', 'location', 'country', 'city', 'hireDate',
+            'originalHireDate', 'terminationDate', 'lastChanged',
+            'standardHoursPerWeek'] +
+            config.get('bamboohr_employees_custom_fields', []) }}
       record_selector:
         type: RecordSelector
         extractor:
           type: DpathExtractor
           field_path:
             - employees
-      paginator:
-        type: NoPagination
-    transformations:
-      - type: AddFields
-        fields:
-          - path: [tenant_id]
-            value: "{{ config['tenant_id'] }}"
-          - path: [source_instance_id]
-            value: "bamboohr-{{ config['domain'] }}"
-          - path: [_source]
-            value: "bamboohr"
-          - path: [_extracted_at]
-            value: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+    primary_key: unique_key
     schema_loader:
       type: InlineSchemaLoader
       schema:
-        $schema: "http://json-schema.org/draft-07/schema#"
         type: object
-        additionalProperties: true
+        $schema: http://json-schema.org/schema#
+        required:
+          - unique_key
         properties:
-          tenant_id:
-            type: string
-          source_instance_id:
-            type: string
           id:
-            type: string
-          displayName:
             type:
-              - "null"
               - string
-          firstName:
-            type:
               - "null"
-              - string
-          lastName:
-            type:
-              - "null"
-              - string
-          workEmail:
-            type:
-              - "null"
-              - string
-          employeeNumber:
-            type:
-              - "null"
-              - string
-          jobTitle:
-            type:
-              - "null"
-              - string
-          department:
-            type:
-              - "null"
-              - string
-          division:
-            type:
-              - "null"
-              - string
-          status:
-            type:
-              - "null"
-              - string
-          employmentHistoryStatus:
-            type:
-              - "null"
-              - string
-          supervisor:
-            type:
-              - "null"
-              - string
-          supervisorEId:
-            type:
-              - "null"
-              - string
-          supervisorEmail:
-            type:
-              - "null"
-              - string
-          location:
-            type:
-              - "null"
-              - string
-          country:
-            type:
-              - "null"
-              - string
           city:
             type:
-              - "null"
               - string
-          hireDate:
-            type:
               - "null"
-              - string
-          originalHireDate:
-            type:
-              - "null"
-              - string
-          terminationDate:
-            type:
-              - "null"
-              - string
-          lastChanged:
-            type:
-              - "null"
-              - string
-            format: date-time
-          payType:
-            type:
-              - "null"
-              - string
-          standardHoursPerWeek:
-            type:
-              - "null"
-              - string
-          _source:
-            type: string
-          _extracted_at:
-            type: string
-            format: date-time
-
-  leave_requests_stream:
-    type: DeclarativeStream
-    name: "leave_requests"
-    primary_key: "id"
-    retriever:
-      type: SimpleRetriever
-      requester:
-        $ref: "#/definitions/base_requester"
-        path: "time_off/requests"
-        request_parameters:
-          start: "2020-01-01"
-          end: "{{ now_utc().strftime('%Y-%m-%d') }}"
-      record_selector:
-        type: RecordSelector
-        extractor:
-          type: DpathExtractor
-          field_path: []
-      paginator:
-        type: NoPagination
-    transformations:
-      - type: AddFields
-        fields:
-          - path: [tenant_id]
-            value: "{{ config['tenant_id'] }}"
-          - path: [source_instance_id]
-            value: "bamboohr-{{ config['domain'] }}"
-          - path: [_source]
-            value: "bamboohr"
-          - path: [_extracted_at]
-            value: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
-    schema_loader:
-      type: InlineSchemaLoader
-      schema:
-        $schema: "http://json-schema.org/draft-07/schema#"
-        type: object
-        additionalProperties: true
-        properties:
-          tenant_id:
-            type: string
-          source_instance_id:
-            type: string
-          id:
-            type: string
-          employeeId:
-            type:
-              - "null"
-              - string
-          name:
-            type:
-              - "null"
-              - string
           status:
             type:
+              - string
               - "null"
+          country:
+            type:
+              - string
+              - "null"
+          division:
+            type:
+              - string
+              - "null"
+          hireDate:
+            type:
+              - string
+              - "null"
+          jobTitle:
+            type:
+              - string
+              - "null"
+          lastName:
+            type:
+              - string
+              - "null"
+          location:
+            type:
+              - string
+              - "null"
+          raw_data:
+            type:
               - object
-            properties:
-              lastChanged:
-                type:
-                  - "null"
-                  - string
-              lastChangedByUserId:
-                type:
-                  - "null"
-                  - string
-              status:
-                type:
-                  - "null"
-                  - string
-          start:
-            type:
               - "null"
-              - string
-            format: date
-          end:
-            type:
-              - "null"
-              - string
-            format: date
-          created:
-            type:
-              - "null"
-              - string
-            format: date
-          type:
-            type:
-              - "null"
-              - object
             properties:
               id:
                 type:
-                  - "null"
                   - string
-              name:
+                  - "null"
+              city:
                 type:
-                  - "null"
                   - string
-              icon:
+                  - "null"
+              status:
                 type:
-                  - "null"
                   - string
-          amount:
+                  - "null"
+              country:
+                type:
+                  - string
+                  - "null"
+              division:
+                type:
+                  - string
+                  - "null"
+              hireDate:
+                type:
+                  - string
+                  - "null"
+              jobTitle:
+                type:
+                  - string
+                  - "null"
+              lastName:
+                type:
+                  - string
+                  - "null"
+              location:
+                type:
+                  - string
+                  - "null"
+              firstName:
+                type:
+                  - string
+                  - "null"
+              workEmail:
+                type:
+                  - string
+                  - "null"
+              department:
+                type:
+                  - string
+                  - "null"
+              supervisor:
+                type:
+                  - string
+                  - "null"
+              displayName:
+                type:
+                  - string
+                  - "null"
+              lastChanged:
+                type:
+                  - string
+                  - "null"
+              supervisorEId:
+                type:
+                  - string
+                  - "null"
+              employeeNumber:
+                type:
+                  - string
+                  - "null"
+              supervisorEmail:
+                type:
+                  - string
+                  - "null"
+              terminationDate:
+                type:
+                  - string
+                  - "null"
+              originalHireDate:
+                type:
+                  - string
+                  - "null"
+              employmentHistoryStatus:
+                type:
+                  - string
+                  - "null"
+          firstName:
             type:
+              - string
               - "null"
-              - object
-            properties:
-              unit:
-                type:
-                  - "null"
-                  - string
-              amount:
-                type:
-                  - "null"
-                  - string
-          dates:
+          source_id:
             type:
+              - string
               - "null"
-              - object
-            additionalProperties: true
-          notes:
+          tenant_id:
             type:
+              - string
               - "null"
-              - object
-            additionalProperties: true
-          _source:
+          workEmail:
+            type:
+              - string
+              - "null"
+          department:
+            type:
+              - string
+              - "null"
+          supervisor:
+            type:
+              - string
+              - "null"
+          unique_key:
             type: string
-          _extracted_at:
-            type: string
-            format: date-time
-
-  meta_fields_stream:
-    type: DeclarativeStream
-    name: "meta_fields"
-    primary_key: "unique"
+          displayName:
+            type:
+              - string
+              - "null"
+          lastChanged:
+            type:
+              - string
+              - "null"
+          supervisorEId:
+            type:
+              - string
+              - "null"
+          employeeNumber:
+            type:
+              - string
+              - "null"
+          supervisorEmail:
+            type:
+              - string
+              - "null"
+          terminationDate:
+            type:
+              - string
+              - "null"
+          originalHireDate:
+            type:
+              - string
+              - "null"
+          employmentHistoryStatus:
+            type:
+              - string
+              - "null"
+        additionalProperties: true
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - raw_data
+            value: "{{ record }}"
+          - type: AddedFieldDefinition
+            path:
+              - tenant_id
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - unique_key
+            value: >-
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
+              }}-{{ record['id'] }}
+  - type: DeclarativeStream
+    name: leave_requests
     retriever:
       type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
       requester:
-        $ref: "#/definitions/base_requester"
-        path: "meta/fields"
+        type: HttpRequester
+        path: time_off/requests
+        url_base:
+          $ref: "#/definitions/linked/HttpRequester/url_base"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
         request_headers:
-          Accept: "application/json"
+          $ref: "#/definitions/linked/HttpRequester/request_headers"
+        request_parameters:
+          end: "{{ now_utc().strftime('%Y-%m-%d') }}"
+          start: "{{ config.get('bamboohr_start_date', '2020-01-01') }}"
       record_selector:
         type: RecordSelector
         extractor:
           type: DpathExtractor
           field_path: []
-      paginator:
-        type: NoPagination
-    transformations:
-      - type: AddFields
-        fields:
-          - path: ["unique"]
-            value: "{{ 'd' ~ record['id'] if record.get('deprecated', false) else record['id'] | string }}"
-          - path: [tenant_id]
-            value: "{{ config['tenant_id'] }}"
-          - path: [source_instance_id]
-            value: "bamboohr-{{ config['domain'] }}"
-          - path: [_source]
-            value: "bamboohr"
-          - path: [_extracted_at]
-            value: "{{ now_utc().strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+    primary_key: unique_key
     schema_loader:
       type: InlineSchemaLoader
       schema:
-        $schema: "http://json-schema.org/draft-07/schema#"
         type: object
-        additionalProperties: true
+        $schema: http://json-schema.org/schema#
+        required:
+          - unique_key
         properties:
+          type:
+            type:
+              - object
+              - "null"
+            properties:
+              id:
+                type:
+                  - string
+                  - "null"
+              icon:
+                type:
+                  - string
+                  - "null"
+              name:
+                type:
+                  - string
+                  - "null"
+          id:
+            type:
+              - string
+              - "null"
+          end:
+            type:
+              - string
+              - "null"
+          name:
+            type:
+              - string
+              - "null"
+          dates:
+            type:
+              - object
+              - "null"
+            additionalProperties: true
+          notes:
+            type:
+              - object
+              - "null"
+            properties:
+              manager:
+                type:
+                  - string
+                  - "null"
+              employee:
+                type:
+                  - string
+                  - "null"
+          start:
+            type:
+              - string
+              - "null"
+          amount:
+            type:
+              - object
+              - "null"
+            properties:
+              unit:
+                type:
+                  - string
+                  - "null"
+              amount:
+                type:
+                  - string
+                  - "null"
+          status:
+            type:
+              - object
+              - "null"
+            properties:
+              status:
+                type:
+                  - string
+                  - "null"
+              lastChanged:
+                type:
+                  - string
+                  - "null"
+              lastChangedByUserId:
+                type:
+                  - string
+                  - "null"
+          actions:
+            type:
+              - object
+              - "null"
+            properties:
+              deny:
+                type:
+                  - boolean
+                  - "null"
+              edit:
+                type:
+                  - boolean
+                  - "null"
+              view:
+                type:
+                  - boolean
+                  - "null"
+              bypass:
+                type:
+                  - boolean
+                  - "null"
+              cancel:
+                type:
+                  - boolean
+                  - "null"
+              approve:
+                type:
+                  - boolean
+                  - "null"
+          created:
+            type:
+              - string
+              - "null"
+          source_id:
+            type:
+              - string
+              - "null"
           tenant_id:
+            type:
+              - string
+              - "null"
+          employeeId:
+            type:
+              - string
+              - "null"
+          unique_key:
             type: string
-          source_instance_id:
-            type: string
+        additionalProperties: true
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - tenant_id
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - unique_key
+            value: >-
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
+              }}-{{ record['id'] }}
+  - type: DeclarativeStream
+    name: meta_fields
+    retriever:
+      type: SimpleRetriever
+      paginator:
+        $ref: "#/definitions/linked/SimpleRetriever/paginator"
+      requester:
+        type: HttpRequester
+        path: meta/fields
+        url_base:
+          $ref: "#/definitions/linked/HttpRequester/url_base"
+        http_method: GET
+        authenticator:
+          $ref: "#/definitions/linked/HttpRequester/authenticator"
+        request_headers:
+          $ref: "#/definitions/linked/HttpRequester/request_headers"
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+    primary_key: unique_key
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/schema#
+        required:
+          - unique_key
+        properties:
+          type:
+            type:
+              - string
+              - "null"
           id:
             type:
               - number
               - string
+              - "null"
           name:
-            type: string
-          type:
-            type: string
+            type:
+              - string
+              - "null"
           alias:
             type:
-              - "null"
               - string
+              - "null"
           unique:
             type:
               - number
               - string
+              - "null"
+          source_id:
+            type:
+              - string
+              - "null"
+          tenant_id:
+            type:
+              - string
+              - "null"
           deprecated:
             type:
-              - "null"
               - boolean
-          _source:
+              - "null"
+          unique_key:
             type: string
-          _extracted_at:
-            type: string
-            format: date-time
-
-streams:
-  - $ref: "#/definitions/employees_stream"
-  - $ref: "#/definitions/leave_requests_stream"
-  - $ref: "#/definitions/meta_fields_stream"
-
-check:
-  type: CheckStream
-  stream_names:
-    - "meta_fields"
+        additionalProperties: true
+    transformations:
+      - type: AddFields
+        fields:
+          - type: AddedFieldDefinition
+            path:
+              - unique
+            value: >-
+              {{ 'd' ~ record['id'] if record.get('deprecated', false) else
+              record['id'] | string }}
+          - type: AddedFieldDefinition
+            path:
+              - tenant_id
+            value: "{{ config['insight_tenant_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - source_id
+            value: "{{ config['insight_source_id'] }}"
+          - type: AddedFieldDefinition
+            path:
+              - unique_key
+            value: >-
+              {{ config['insight_tenant_id'] }}-{{ config['insight_source_id']
+              }}-{{ 'd' ~ record['id'] if record.get('deprecated', false) else
+              record['id'] | string }}
 
 spec:
   type: Spec
-  documentation_url: "https://documentation.bamboohr.com/reference"
+  documentation_url: https://documentation.bamboohr.com/reference
   connection_specification:
-    $schema: "http://json-schema.org/draft-07/schema#"
-    title: "BambooHR Source"
     type: object
+    $schema: http://json-schema.org/draft-07/schema#
     required:
-      - "tenant_id"
-      - "api_key"
-      - "domain"
-    additionalProperties: true
+      - insight_tenant_id
+      - insight_source_id
+      - bamboohr_api_key
+      - bamboohr_domain
     properties:
-      tenant_id:
+      bamboohr_domain:
         type: string
-        title: "Tenant ID"
-        description: "Tenant isolation identifier (UUID)."
-        order: 0
-      api_key:
-        type: string
-        title: "API Key"
-        description: "BambooHR API key for authentication. Found in BambooHR > Account > API Keys."
-        airbyte_secret: true
-        order: 1
-      domain:
-        type: string
-        title: "Domain"
-        description: "Your BambooHR subdomain (e.g., 'acme' from acme.bamboohr.com)."
+        description: Your BambooHR subdomain (e.g., 'acme' from acme.bamboohr.com).
+        order: 3
+        title: BambooHR Domain
         examples:
-          - "acme"
+          - acme
+      bamboohr_api_key:
+        type: string
+        description: >-
+          BambooHR API key for authentication. Found in BambooHR > Account > API
+          Keys.
         order: 2
+        title: BambooHR API Key
+        airbyte_secret: true
+      insight_source_id:
+        type: string
+        description: >-
+          Unique identifier for this BambooHR connector instance (e.g.,
+          'bamboohr-acme-prod').
+        order: 1
+        title: Insight Source ID
+        examples:
+          - bamboohr-acme-prod
+      insight_tenant_id:
+        type: string
+        description: Tenant isolation identifier (UUID).
+        order: 0
+        title: Insight Tenant ID
+      bamboohr_employees_custom_fields:
+        type: array
+        description: >-
+          Optional list of custom BambooHR field aliases to include in employee
+          extraction (e.g., 'customFunctionalTeamRD', 'customActualProjects').
+          Use the meta_fields stream to discover available field aliases.
+        items:
+          type: string
+        order: 4
+        title: Employees Custom Fields
+        default: []
+      bamboohr_start_date:
+        type: string
+        description: >-
+          Start date for leave requests history (ISO format YYYY-MM-DD).
+          Defaults to 2020-01-01 if not set.
+        order: 5
+        title: Start Date
+        default: "2020-01-01"
+        examples:
+          - "2024-01-01"
+    additionalProperties: true
+
+metadata:
+  testedStreams:
+    employees:
+      isStale: true
+      hasRecords: true
+      streamHash: 0c996cb994098c272afe2142de2df66ac051b176
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+    meta_fields:
+      isStale: false
+      hasRecords: true
+      streamHash: b59b032cae54d56101e8cf4c9f89473e1184730f
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+    leave_requests:
+      isStale: true
+      hasRecords: true
+      streamHash: cf2969100973355de28b822a2e2515ff6fcd3308
+      hasResponse: true
+      primaryKeysAreUnique: true
+      primaryKeysArePresent: true
+      responsesAreSuccessful: true
+  autoImportSchema:
+    employees: true
+    meta_fields: true
+    leave_requests: true
+
+concurrency_level:
+  type: ConcurrencyLevel
+  default_concurrency: 1

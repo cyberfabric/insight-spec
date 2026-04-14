@@ -1,0 +1,13 @@
+airbyte-toolkit/state.yaml
+connections/*.yaml
+!connections/*.yaml.example
+secrets/
+.env.local
+*.env.local
+tools/declarative-connector/
+workflows/example-tenant/
+workflows/*/
+!workflows/templates/
+!workflows/schedules/
+dbt/target/
+dbt/logs/

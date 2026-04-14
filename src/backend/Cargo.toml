@@ -1,0 +1,78 @@
+[workspace]
+members = [
+    "libs/insight-clickhouse",
+    "plugins/oidc-authn-plugin",
+    "services/api-gateway",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+authors = ["Cyber Fabric"]
+repository = "https://github.com/cyberfabric/insight"
+rust-version = "1.92.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_mut = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+
+[workspace.dependencies]
+# ClickHouse client
+clickhouse = { version = "0.14", features = ["uuid"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Async runtime
+tokio = { version = "1.47", features = ["full"] }
+async-trait = "0.1"
+
+# IDs and time
+uuid = { version = "1.19", features = ["serde", "v7"] }
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Security
+secrecy = { version = "0.10", features = ["serde"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# cyberfabric-core (crates.io)
+modkit = { package = "cf-modkit", version = "0.6.2" }
+modkit-auth = { package = "cf-modkit-auth", version = "0.6.1" }
+modkit-http = { package = "cf-modkit-http", version = "0.6.2" }
+modkit-security = { package = "cf-modkit-security", version = "0.6.2" }
+modkit-macros = { package = "cf-modkit-macros", version = "0.6.2" }
+modkit-errors = { package = "cf-modkit-errors", version = "0.6.2" }
+
+# cyberfabric-core SDKs (crates.io)
+authn-resolver-sdk = { package = "cf-authn-resolver-sdk", version = "0.3.8" }
+authz-resolver-sdk = { package = "cf-authz-resolver-sdk", version = "0.2.17" }
+types-registry-sdk = { package = "cf-types-registry-sdk", version = "0.1.5" }
+
+# cyberfabric-core system modules (crates.io)
+api-gateway-module = { package = "cf-api-gateway", version = "0.1.22" }
+authn-resolver = { package = "cf-authn-resolver", version = "0.2.8" }
+authz-resolver = { package = "cf-authz-resolver", version = "0.1.15" }
+tenant-resolver = { package = "cf-tenant-resolver", version = "0.1.16" }
+static-authz-plugin = { package = "cf-static-authz-plugin", version = "0.1.15" }
+single-tenant-tr-plugin = { package = "cf-single-tenant-tr-plugin", version = "0.1.17" }
+grpc-hub = { package = "cf-grpc-hub", version = "0.1.18" }
+module-orchestrator = { package = "cf-module-orchestrator", version = "0.1.18" }
+types-registry = { package = "cf-types-registry", version = "0.1.17" }

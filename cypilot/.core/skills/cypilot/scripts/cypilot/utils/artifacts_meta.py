@@ -990,7 +990,10 @@ def load_artifacts_meta(adapter_dir: Path) -> Tuple[Optional[ArtifactsMeta], Opt
     # @cpt-begin:cpt-cypilot-algo-core-infra-registry-parsing:p1:inst-reg-parse-merge
     try:
         if path.suffix == ".toml":
-            import tomllib
+            try:
+                import tomllib
+            except ModuleNotFoundError:
+                import tomli as tomllib
             with open(path, "rb") as f:
                 data = tomllib.load(f)
         else:
@@ -1001,7 +1004,10 @@ def load_artifacts_meta(adapter_dir: Path) -> Tuple[Optional[ArtifactsMeta], Opt
         if not core_path.is_file():
             core_path = adapter_dir / "core.toml"
         if core_path.is_file():
-            import tomllib as _tl
+            try:
+                import tomllib as _tl
+            except ModuleNotFoundError:
+                import tomli as _tl
             with open(core_path, "rb") as f:
                 core = _tl.load(f)
             # version and project_root: core.toml is authoritative, artifacts.toml is fallback

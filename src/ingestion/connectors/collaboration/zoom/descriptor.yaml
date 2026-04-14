@@ -1,0 +1,7 @@
+name: zoom
+version: '1.0'
+schedule: 0 3 * * *
+dbt_select: tag:zoom+
+workflow: sync
+connection:
+  namespace: bronze_zoom

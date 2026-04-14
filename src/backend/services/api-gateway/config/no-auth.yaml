@@ -1,0 +1,66 @@
+# Insight API Gateway — Local Development (No Auth)
+#
+# Usage: insight-api-gateway run -c config/no-auth.yaml
+#
+# All requests get a default SecurityContext (root access).
+# Do NOT use in production.
+
+server:
+  home_dir: "~/.insight"
+
+logging:
+  default:
+    console_level: debug
+
+modules:
+  api-gateway:
+    config:
+      bind_addr: "127.0.0.1:8080"
+      enable_docs: true
+      cors_enabled: true
+      prefix_path: "/api/v1"
+      openapi:
+        title: "Insight API (dev)"
+        version: "0.1.0-dev"
+        description: "Insight Platform API — auth disabled"
+      auth_disabled: true
+
+  auth-info:
+    config:
+      issuer_url: ""
+      client_id: ""
+      redirect_uri: "http://localhost:3000/callback"
+
+  module-orchestrator:
+    config: {}
+
+  grpc-hub:
+    config:
+      listen_addr: "uds:///tmp/insight-grpc"
+
+  authn-resolver:
+    config:
+      vendor: "hyperspot"
+
+  authz-resolver:
+    config:
+      vendor: "hyperspot"
+
+  static-authz-plugin:
+    config:
+      vendor: "hyperspot"
+      priority: 100
+
+  tenant-resolver:
+    config:
+      vendor: "hyperspot"
+
+  single-tenant-tr-plugin:
+    config:
+      vendor: "hyperspot"
+      priority: 20
+      tenants:
+        - id: "00000000-df51-5b42-9538-d2b56b7ee953"
+          name: "default"
+          parent_id: null
+          status: active

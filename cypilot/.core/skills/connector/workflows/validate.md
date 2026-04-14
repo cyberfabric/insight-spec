@@ -1,0 +1,85 @@
+---
+name: connector-validate
+description: "Validate an Insight Connector package against spec"
+---
+
+# Validate Connector
+
+Checks that a connector package meets all requirements from the connector spec.
+
+## Checklist
+
+Read connector package files and verify each item:
+
+### Structure
+- [ ] `connector.yaml` exists (nocode) or `Dockerfile` + `source_<name>/source.py` exists (CDK)
+- [ ] `descriptor.yaml` exists with required fields (name, version, type, schedule, workflow, dbt_select, connection.namespace)
+- [ ] K8s Secret example in `secrets/connectors/<name>.yaml.example` with `insight_source_id` annotation
+- [ ] `dbt/` directory with at least one .sql model and schema.yml
+
+### Manifest (nocode)
+- [ ] `version: 7.0.4` or compatible
+- [ ] `type: DeclarativeSource`
+- [ ] `spec.connection_specification` has `insight_tenant_id` as required
+- [ ] `spec.connection_specification` has `insight_source_id` as required
+- [ ] All config fields use prefixes (insight_*, azure_*, github_*, etc.)
+- [ ] No bare `tenant_id` or `client_id` in config fields
+- [ ] AddFields includes `tenant_id` from `config['insight_tenant_id']`
+- [ ] AddFields includes `source_id` from `config['insight_source_id']`
+- [ ] AddFields includes `unique_key` with pattern: `{tenant_id}-{source_id}-{natural_key}`
+- [ ] InlineSchemaLoader has `additionalProperties: true`
+- [ ] Schema includes `tenant_id`, `source_id`, `unique_key` as string fields
+- [ ] Nullable types used only where API actually returns null (not all fields)
+
+### CDK (Python)
+- [ ] `parse_response()` injects `tenant_id`, `source_id`, `unique_key`
+- [ ] `unique_key` includes `tenant_id` and `source_id`
+- [ ] `spec.json` has `insight_tenant_id` and `insight_source_id` as required
+- [ ] All config fields in `spec.json` use source-specific prefixes (`insight_*`, `github_*`, `jira_*`, etc.)
+- [ ] No bare field names (`token`, `client_id`, `tenant_id`, `start_date`, etc.) in `connectionSpecification.properties`
+
+### Descriptor
+- [ ] `name` matches directory name
+- [ ] `connection.namespace` = `bronze_<name>`
+- [ ] `dbt_select` includes connector tag with `+` suffix (e.g., `tag:m365+`)
+- [ ] `schedule` is valid cron expression
+- [ ] `workflow` field is present
+- [ ] No `streams` block (streams are owned by Airbyte connector, discovered via `airbyte discover`)
+- [ ] No `silver_targets` block (Silver targets are determined by dbt model tags via `dbt_select`)
+
+### dbt Models
+- [ ] Model name follows `<connector>__<domain>.sql` pattern
+- [ ] `materialized='incremental'`
+- [ ] `schema='staging'`
+- [ ] Tags include connector name and `silver:class_<domain>`
+- [ ] SELECT includes `tenant_id`, `source_id`, `unique_key`
+- [ ] Uses `{{ source('bronze_<name>', '<stream>') }}`
+- [ ] Has `{% if is_incremental() %}` block
+
+### dbt schema.yml
+- [ ] Source defined with `schema: bronze_<name>`
+- [ ] Model has `tenant_id` with not_null test
+- [ ] Model has `source_id` with not_null test
+- [ ] Model has `unique_key` with not_null and unique tests
+
+### Credentials Template
+- [ ] `credentials.yaml.example` lists all required fields
+- [ ] `insight_source_id` is included
+- [ ] No real credentials in any tracked file
+
+## Output
+
+```
+=== Connector Validation: <name> ===
+
+  Structure:    PASS (4/4)
+  Manifest:     PASS (12/12)  or  CDK: PASS (5/5)
+  Descriptor:   PASS (7/7)
+  dbt Models:   PASS (7/7)
+  dbt Schema:   PASS (4/4)
+  Credentials:  PASS (3/3)
+
+  Status: PASS
+```
+
+If any FAIL, show specific issue with file:line and fix suggestion.

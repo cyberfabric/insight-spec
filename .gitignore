@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+uv.lock
+.DS_Store
+local
+access
+
+# IDE
+.vs/
+.prs/
+
+# Claude Code local state
+.claude/worktrees/
+.claude/settings.local.json
+.claude/design_validate.json
+
+# Cypilot plans (local working state)
+cypilot/.plans/

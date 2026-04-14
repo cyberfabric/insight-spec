@@ -1,0 +1,113 @@
+# Insight API Gateway Configuration
+#
+# Environment variable overrides: APP__modules__<module>__config__<key>
+# Example: APP__modules__oidc-authn-plugin__config__issuer_url=https://dev-123.okta.com/oauth2/default
+
+server:
+  home_dir: "/app/data"
+
+logging:
+  # Console-only logging (stdout → K8s log collector → Loki).
+  # File logging disabled — container filesystem is ephemeral.
+  default:
+    console_level: info
+  api-gateway:
+    console_level: debug
+
+modules:
+  api-gateway:
+    config:
+      bind_addr: "0.0.0.0:8080"
+      enable_docs: false
+      cors_enabled: true
+      prefix_path: "/api/v1"
+      openapi:
+        title: "Insight API"
+        version: "0.1.0"
+        description: "Insight Platform API"
+      defaults:
+        body_limit_bytes: 16777216  # 16 MB
+        rate_limit:
+          rps: 100
+          burst: 50
+          in_flight: 32
+
+      # Set to true to disable auth for local development.
+      # When false, OIDC plugin validates JWT tokens.
+      auth_disabled: false
+
+  module-orchestrator:
+    config: {}
+
+  grpc-hub:
+    config:
+      listen_addr: "uds:///tmp/insight-grpc"
+
+  # ─── Authentication ─────────────────────────────────────────
+  authn-resolver:
+    config:
+      vendor: "hyperspot"
+
+  # OIDC/JWT plugin — validates bearer tokens against IdP (Okta, Keycloak, etc.)
+  # Required env vars for production:
+  #   APP__modules__oidc-authn-plugin__config__issuer_url
+  #   APP__modules__oidc-authn-plugin__config__audience
+  oidc-authn-plugin:
+    config:
+      vendor: "hyperspot"
+      priority: 50
+      issuer_url: "${OIDC_ISSUER_URL}"    # e.g., https://dev-12345.okta.com/oauth2/default
+      audience: "${OIDC_AUDIENCE}"         # e.g., api://insight
+      # jwks_url: ""                       # Override if JWKS URL differs from {issuer}/v1/keys
+      jwks_refresh_interval_seconds: 300
+      tenant_claim: "tenant_id"            # JWT claim containing tenant UUID
+      subject_type: "user"
+      leeway_seconds: 60
+
+  # ─── Auth Info (public endpoint for frontend) ───────────────
+  # NOTE: issuer_url MUST match oidc-authn-plugin.config.issuer_url above.
+  # Both are set from the same OIDC_ISSUER_URL env var / Helm oidc.issuerUrl value.
+  auth-info:
+    config:
+      issuer_url: "${OIDC_ISSUER_URL}"
+      client_id: "${OIDC_CLIENT_ID}"
+      redirect_uri: "${OIDC_REDIRECT_URI}"
+      scopes:
+        - openid
+        - profile
+        - email
+
+  # ─── Authorization ──────────────────────────────────────────
+  authz-resolver:
+    config:
+      vendor: "hyperspot"
+
+  # Static authz plugin (dev stub — allows all, scoped to tenant).
+  # Replace with insight-authz-plugin for org-tree + RBAC in production.
+  static-authz-plugin:
+    config:
+      vendor: "hyperspot"
+      priority: 100
+
+  # ─── Tenant Resolution ─────────────────────────────────────
+  tenant-resolver:
+    config:
+      vendor: "hyperspot"
+
+  single-tenant-tr-plugin:
+    config:
+      vendor: "hyperspot"
+      priority: 20
+      tenants:
+        # Default tenant — used when a single workspace is deployed.
+        # Replace with dynamic tenant resolution for multi-tenant deployments.
+        - id: "00000000-df51-5b42-9538-d2b56b7ee953"
+          name: "default"
+          parent_id: null
+          status: active
+
+# ─── Local development ──────────────────────────────────────
+# To run without OIDC (auth disabled), override:
+#   modules.api-gateway.config.auth_disabled: true
+# Or use the no-auth config:
+#   insight-api-gateway run -c config/no-auth.yaml

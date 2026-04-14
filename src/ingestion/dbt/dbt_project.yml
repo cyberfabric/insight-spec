@@ -6,6 +6,7 @@ profile: ingestion
 
 model-paths:
   - silver
+  - identity
   - ../connectors
 
 macro-paths:

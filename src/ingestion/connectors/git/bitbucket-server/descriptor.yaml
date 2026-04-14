@@ -1,0 +1,7 @@
+name: bitbucket-server
+version: '1.0'
+schedule: 0 2 * * *
+dbt_select: tag:bitbucket-server+
+workflow: sync
+connection:
+  namespace: bronze_bitbucket_server

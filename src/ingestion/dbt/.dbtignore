@@ -1,0 +1,5 @@
+# Ignore Python source code and virtual environments in connectors
+**/*.py
+**/.venv/**
+**/node_modules/**
+**/__pycache__/**

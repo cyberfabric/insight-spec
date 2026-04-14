@@ -1,0 +1,7 @@
+name: cursor
+version: '1.0'
+schedule: 0 2 * * *
+dbt_select: tag:cursor+
+workflow: sync
+connection:
+  namespace: bronze_cursor
