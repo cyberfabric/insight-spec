@@ -20,7 +20,7 @@ SELECT
         COALESCE(state, '')
     ) AS state,
     COALESCE(author_display_name, '') AS author_name,
-    COALESCE(author_uuid, '') AS author_email,
+    '' AS author_email,
     COALESCE(source_branch, '') AS source_branch,
     COALESCE(destination_branch, '') AS destination_branch,
     parseDateTimeBestEffortOrNull(created_on) AS created_on,

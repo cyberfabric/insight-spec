@@ -16,7 +16,7 @@ SELECT
     COALESCE(JSONExtractString(p, 'uuid'), '') AS reviewer_uuid,
     COALESCE(JSONExtractString(p, 'state'), '') AS status,
     if(JSONExtractBool(p, 'approved'), 1, 0) AS approved,
-    parseDateTimeBestEffortOrNull(pr.updated_on) AS reviewed_at,
+    NULL AS reviewed_at,
     'insight_bitbucket_cloud' AS data_source,
     toUnixTimestamp64Milli(now64()) AS _version,
     pr._airbyte_extracted_at

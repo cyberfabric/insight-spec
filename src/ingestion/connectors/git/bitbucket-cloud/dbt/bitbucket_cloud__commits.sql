@@ -6,27 +6,36 @@
 ) }}
 
 SELECT
-    tenant_id,
-    source_id,
-    unique_key,
-    COALESCE(workspace, '') AS project_key,
-    COALESCE(repo_slug, '') AS repo_slug,
-    COALESCE(hash, '') AS commit_hash,
-    COALESCE(branch_name, '') AS branch,
-    COALESCE(author_name, '') AS author_name,
-    COALESCE(author_email, '') AS author_email,
+    c.tenant_id,
+    c.source_id,
+    c.unique_key,
+    COALESCE(c.workspace, '') AS project_key,
+    COALESCE(c.repo_slug, '') AS repo_slug,
+    COALESCE(c.hash, '') AS commit_hash,
+    COALESCE(c.branch_name, '') AS branch,
+    COALESCE(c.author_name, '') AS author_name,
+    COALESCE(c.author_email, '') AS author_email,
     '' AS committer_name,
     '' AS committer_email,
-    COALESCE(message, '') AS message,
-    parseDateTimeBestEffortOrNull(date) AS date,
-    0 AS files_changed,
-    0 AS lines_added,
-    0 AS lines_removed,
-    if(length(COALESCE(parent_hashes, '')) > 46, 1, 0) AS is_merge_commit,
+    COALESCE(c.message, '') AS message,
+    parseDateTimeBestEffortOrNull(c.date) AS date,
+    COALESCE(fc.files_changed, 0) AS files_changed,
+    COALESCE(fc.lines_added, 0) AS lines_added,
+    COALESCE(fc.lines_removed, 0) AS lines_removed,
+    if(JSONLength(COALESCE(c.parent_hashes, '[]')) > 1, 1, 0) AS is_merge_commit,
     'insight_bitbucket_cloud' AS data_source,
     toUnixTimestamp64Milli(now64()) AS _version,
-    _airbyte_extracted_at
-FROM {{ source('bronze_bitbucket_cloud', 'commits') }}
+    c._airbyte_extracted_at
+FROM {{ source('bronze_bitbucket_cloud', 'commits') }} AS c
+LEFT JOIN (
+    SELECT
+        sha,
+        count() AS files_changed,
+        SUM(COALESCE(additions, 0)) AS lines_added,
+        SUM(COALESCE(deletions, 0)) AS lines_removed
+    FROM {{ source('bronze_bitbucket_cloud', 'file_changes') }}
+    GROUP BY sha
+) AS fc ON fc.sha = c.hash
 {% if is_incremental() %}
-WHERE _airbyte_extracted_at > (SELECT max(_airbyte_extracted_at) FROM {{ this }})
+WHERE c._airbyte_extracted_at > (SELECT max(_airbyte_extracted_at) FROM {{ this }})
 {% endif %}
