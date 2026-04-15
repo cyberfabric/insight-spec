@@ -15,7 +15,7 @@
 # ---------------------------------------------------------------------------
 
 TOOLKIT_DIR="${TOOLKIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-STATE_FILE="${TOOLKIT_DIR}/state.yaml"
+STATE_FILE="${STATE_FILE:-${TOOLKIT_DIR}/state.yaml}"
 STATE_CM_NAME="airbyte-state"
 STATE_CM_NS="data"
 

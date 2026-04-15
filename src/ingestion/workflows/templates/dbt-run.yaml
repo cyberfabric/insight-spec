@@ -19,8 +19,7 @@ spec:
             default: "8123"
       activeDeadlineSeconds: 1800
       script:
-        image: insight-toolbox:local
-        imagePullPolicy: IfNotPresent
+        image: ghcr.io/cyberfabric/insight-toolbox:latest
         command: [bash]
         env:
           - name: CLICKHOUSE_PASSWORD

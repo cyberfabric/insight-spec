@@ -5,7 +5,7 @@ Zoom meeting, webinar, and user activity data via Server-to-Server OAuth.
 ## Prerequisites
 
 1. Create a Server-to-Server OAuth app at https://marketplace.zoom.us/
-2. Grant scopes: `dashboard:read:chat:admin`, `dashboard:read:list_meetings:admin`, `dashboard:read:list_meeting_participants:admin`
+2. Grant scopes: `dashboard:read:chat:admin`, `dashboard:read:list_meetings:admin`, `dashboard:read:list_meeting_participants:admin`, `user:read:list_users:admin`
 
 
 ## K8s Secret

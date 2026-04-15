@@ -2,9 +2,6 @@
 connections/*.yaml
 !connections/*.yaml.example
 
-# Airbyte toolkit state (generated, instance-specific)
-airbyte-toolkit/state.yaml
-
 # Generated schemas and catalogs (can be regenerated)
 connectors/**/schemas/
 connectors/**/configured_catalog.json
