@@ -131,6 +131,8 @@ definitions:
       collected_at: {type: ["string", "null"]}
     required:
       - unique_key
+      - tenant_id
+      - source_id
     additionalProperties: true
 
   jira_user_schema:
@@ -148,6 +150,8 @@ definitions:
       collected_at: {type: ["string", "null"]}
     required:
       - unique_key
+      - tenant_id
+      - source_id
     additionalProperties: true
 
   jira_issue_schema:
@@ -170,6 +174,8 @@ definitions:
       collected_at: {type: ["string", "null"]}
     required:
       - unique_key
+      - tenant_id
+      - source_id
     additionalProperties: true
 
   jira_issue_history_schema:
@@ -187,6 +193,8 @@ definitions:
       collected_at: {type: ["string", "null"]}
     required:
       - unique_key
+      - tenant_id
+      - source_id
     additionalProperties: true
 
   jira_comments_schema:
@@ -205,6 +213,8 @@ definitions:
       collected_at: {type: ["string", "null"]}
     required:
       - unique_key
+      - tenant_id
+      - source_id
     additionalProperties: true
 
   jira_worklogs_schema:
@@ -223,6 +233,8 @@ definitions:
       collected_at: {type: ["string", "null"]}
     required:
       - unique_key
+      - tenant_id
+      - source_id
     additionalProperties: true
 
   jira_fields_schema:
@@ -241,6 +253,8 @@ definitions:
       collected_at: {type: ["string", "null"]}
     required:
       - unique_key
+      - tenant_id
+      - source_id
     additionalProperties: true
 
   jira_sprints_schema:
@@ -260,6 +274,8 @@ definitions:
       collected_at: {type: ["string", "null"]}
     required:
       - unique_key
+      - tenant_id
+      - source_id
     additionalProperties: true
 
 streams:
@@ -770,11 +786,11 @@ concurrency_level:
 
 metadata:
   autoImportSchema:
-    jira_fields: true
-    jira_projects: true
-    jira_user: true
-    jira_issue: true
-    jira_issue_history: true
-    jira_comments: true
-    jira_worklogs: true
-    jira_sprints: true
+    jira_fields: false
+    jira_projects: false
+    jira_user: false
+    jira_issue: false
+    jira_issue_history: false
+    jira_comments: false
+    jira_worklogs: false
+    jira_sprints: false

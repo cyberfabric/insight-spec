@@ -6,10 +6,8 @@ workflow: sync
 
 # Silver routing (class_task_tracker_*) is delivered by the task-tracking Silver
 # layer package, not by this connector. This connector ships only Bronze source
-# declarations in dbt/schema.yml. `dbt_select` is empty to make the connector's
-# dbt step a deliberate no-op; Silver pipelines run against the shared
-# task-tracker Silver models separately. See DESIGN §1.1 and §3.2.
-silver_targets: []
+# declarations in dbt/schema.yml. dbt_select is empty so the connector's dbt
+# step is a deliberate no-op. See DESIGN §1.1 and §3.2.
 dbt_select: ""
 
 connection:
