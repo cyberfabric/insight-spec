@@ -12,7 +12,7 @@ spec:
       inputs:
         parameters:
           - name: dbt_select
-            default: "tag:silver"
+            default: "+tag:silver"
           - name: clickhouse_host
             default: "clickhouse.data.svc.cluster.local"
           - name: clickhouse_port
