@@ -1,7 +1,7 @@
 # Ingestion Stack
 
 Data pipeline: External APIs → Airbyte → ClickHouse Bronze → dbt → Silver.
-Everything runs in a Kubernetes cluster (Kind for local development).
+Everything runs in a Kubernetes cluster (Kind for local development, K8s for production).
 
 ## Concepts
 
@@ -141,7 +141,7 @@ export KUBECONFIG=~/.kube/insight.kubeconfig
 
 | Command | Description |
 |---------|-------------|
-| `./airbyte-toolkit/build-connector.sh <path>` | Build Docker image, load into Kind, register/update Airbyte definition |
+| `./airbyte-toolkit/build-connector.sh <path> [--push]` | Build Docker image, push to registry (or load into Kind), register Airbyte definition |
 | `./airbyte-toolkit/reset-connector.sh <name> <tenant>` | Delete connection + source + definition, drop Bronze tables, clean state |
 
 ### Examples
@@ -307,7 +307,7 @@ src/ingestion/
 │
 ├── scripts/                         # Internal scripts (run inside toolbox)
 │   ├── init.sh                      #   Full initialization
-│   ├── build-connector.sh           #   Build CDK connector (Docker → Kind → Airbyte)
+│   ├── build-connector.sh           #   Build CDK connector (Docker → registry/Kind → Airbyte)
 │   ├── reset-connector.sh           #   Reset connector (delete all + drop tables + clean state)
 │   ├── sync-flows.sh               #   Generate + apply CronWorkflows
 │   └── wait-for-services.sh        #   kubectl wait for pods
