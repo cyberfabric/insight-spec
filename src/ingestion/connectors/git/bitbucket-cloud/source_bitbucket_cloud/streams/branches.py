@@ -1,96 +1,67 @@
-"""Bitbucket Cloud branches stream (REST, full refresh, child of repositories)."""
+"""Bitbucket Cloud branches stream (full refresh, HttpSubStream of repositories)."""
 
-import json
 import logging
-import os
-import tempfile
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Mapping, Optional
 
-from source_bitbucket_cloud.streams.base import BitbucketCloudRestStream, _make_unique_key
-from source_bitbucket_cloud.streams.repositories import RepositoriesStream
+from airbyte_cdk.sources.streams.http import HttpSubStream
+
+from source_bitbucket_cloud.streams.base import BitbucketCloudStream, _make_unique_key
 
 logger = logging.getLogger("airbyte")
 
 
-class BranchesStream(BitbucketCloudRestStream):
-    """Fetches branches for each repository."""
+class BranchesStream(HttpSubStream, BitbucketCloudStream):
+    """Branches for each repository."""
 
     name = "branches"
     use_cache = True
 
-    def __init__(self, parent: RepositoriesStream, **kwargs):
-        super().__init__(**kwargs)
-        self._parent = parent
-        self._child_records_file = tempfile.NamedTemporaryFile(
-            mode="w", prefix="insight_bb_branches_", suffix=".jsonl", delete=False,
-        )
-        self._child_records_path = self._child_records_file.name
-
-    def _path(self, stream_slice: Optional[Mapping[str, Any]] = None, **kwargs) -> str:
+    def _path(self, stream_slice: Optional[Mapping[str, Any]] = None) -> str:
         s = stream_slice or {}
-        workspace = s.get("workspace", "")
-        slug = s.get("slug", "")
-        if not workspace or not slug:
-            raise ValueError("BranchesStream._path() called without workspace/slug in stream_slice")
-        return f"repositories/{workspace}/{slug}/refs/branches"
+        repo = s["parent"]
+        return f"repositories/{repo['workspace']}/{repo['slug']}/refs/branches"
 
-    def stream_slices(self, **kwargs) -> Iterable[Optional[Mapping[str, Any]]]:
-        for record in self._parent.get_child_records():
-            workspace = record.get("workspace", "")
-            slug = record.get("slug", "")
-            mainbranch_name = record.get("mainbranch_name", "")
-            updated_on = record.get("updated_on", "")
-            if workspace and slug:
-                yield {
-                    "workspace": workspace,
-                    "slug": slug,
-                    "mainbranch_name": mainbranch_name,
-                    "updated_on": updated_on,
-                }
-
-    def parse_response(self, response, stream_slice=None, **kwargs):
+    def parse_response(
+        self,
+        response,
+        stream_slice: Optional[Mapping[str, Any]] = None,
+        **kwargs: Any,
+    ):
         s = stream_slice or {}
-        workspace = s.get("workspace", "")
-        slug = s.get("slug", "")
-        if not self._guard_response(response):
-            return
-        data = response.json()
-        branches = data.get("values", [])
-        for branch in branches:
+        repo = s["parent"]
+        workspace = repo["workspace"]
+        slug = repo["slug"]
+        default_branch_name = repo.get("mainbranch_name", "")
+        repo_updated_on = repo.get("updated_on", "")
+        emitted = 0
+
+        for branch in self._iter_values(response):
+            emitted += 1
             branch_name = branch.get("name", "")
             target = branch.get("target") or {}
             target_hash = target.get("hash", "")
+            target_date = target.get("date", "")
 
-            branch["unique_key"] = _make_unique_key(
-                self._tenant_id, self._source_id, workspace, slug, branch_name,
-            )
-            branch["workspace"] = workspace
-            branch["repo_slug"] = slug
-            branch["mainbranch_name"] = s.get("mainbranch_name", "")
-            branch["updated_on"] = s.get("updated_on", "")
-
-            # Write minimal child data to disk for commits stream
-            self._child_records_file.write(json.dumps({
+            record = {
+                "unique_key": _make_unique_key(
+                    self._tenant_id, self._source_id, workspace, slug, branch_name,
+                ),
                 "name": branch_name,
+                "target": target,
+                "target_hash": target_hash,
+                "target_date": target_date,
                 "workspace": workspace,
                 "repo_slug": slug,
-                "mainbranch_name": s.get("mainbranch_name", ""),
-                "updated_on": s.get("updated_on", ""),
-                "target_hash": target_hash,
-            }, separators=(",", ":")) + "\n")
-            yield self._add_envelope(branch)
+                "mainbranch_name": default_branch_name,
+                "default_branch_name": default_branch_name,
+                "is_default": branch_name == default_branch_name,
+                "updated_on": repo_updated_on,
+            }
+            yield self._envelope(record)
 
-    def get_child_records(self) -> Iterable:
-        """Yield branch records from disk. Zero memory, zero API calls."""
-        if self._child_records_file and not self._child_records_file.closed:
-            self._child_records_file.close()
-        if not os.path.exists(self._child_records_path):
-            return
-        with open(self._child_records_path, "r") as f:
-            for line in f:
-                line = line.rstrip("\n")
-                if line:
-                    yield json.loads(line)
+        logger.debug(
+            f"branches: repo={workspace}/{slug} page_emitted={emitted}"
+        )
 
     def get_json_schema(self) -> Mapping[str, Any]:
         return {
@@ -105,9 +76,13 @@ class BranchesStream(BitbucketCloudRestStream):
                 "collected_at": {"type": "string"},
                 "name": {"type": ["null", "string"]},
                 "target": {"type": ["null", "object"]},
+                "target_hash": {"type": ["null", "string"]},
+                "target_date": {"type": ["null", "string"]},
                 "workspace": {"type": "string"},
                 "repo_slug": {"type": "string"},
                 "mainbranch_name": {"type": ["null", "string"]},
+                "default_branch_name": {"type": ["null", "string"]},
+                "is_default": {"type": ["null", "boolean"]},
                 "updated_on": {"type": ["null", "string"]},
             },
         }

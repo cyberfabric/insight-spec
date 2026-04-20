@@ -1,348 +1,266 @@
-"""Bitbucket Cloud commits stream (REST, incremental, partitioned by repo+branch).
+"""Bitbucket Cloud commits stream (incremental, per-branch cursor).
 
-Performance optimizations (all in stream_slices, single-threaded):
-1. Repo freshness gate: skip repos where updated_on hasn't changed
-2. Branch HEAD SHA dedup: skip sibling branches with same HEAD SHA
-3. HEAD SHA unchanged: skip branches where HEAD hasn't moved
-4. Seen-hash skip: skip non-default branches whose HEAD is in main's history
-5. Force-push detection: reset cursor when HEAD changes
+Per-branch state: ``{ws/slug/branch: {date, head_sha}}``.
+
+Three load-bearing optimizations (paired, not independent):
+
+1. **HEAD-unchanged skip**: when stored head_sha == current HEAD, the branch
+   is fully in sync — skip entirely (no API call).
+2. **Force-push detection**: when stored head_sha != current HEAD, reset that
+   branch's cursor to ``start_date`` and re-fetch. Catches rebases that
+   preserve author_date (cursor alone would silently miss rewritten commits).
+3. **Bloom filter cross-branch pagination-stop**: once a feature branch
+   re-enters main's shared history, stop paginating. Bounded to ~17MB
+   (10M shas × 0.1% FP). A false positive only stops pagination one page
+   early; destination dedupes by unique_key so no correctness risk.
+
+Default branch is iterated first within each repo so the bloom fills with
+main's history before feature branches iterate.
 """
 
 import logging
-import os
 import re
-import tempfile
-from typing import Any, Iterable, Mapping, MutableMapping, Optional
+from typing import Any, Iterable, List, Mapping, MutableMapping, Optional
 
-from source_bitbucket_cloud.streams.base import (
-    BitbucketAuthError,
-    BitbucketCloudRestStream,
-    _make_unique_key,
-    _now_iso,
-)
-from source_bitbucket_cloud.streams.branches import BranchesStream
+from airbyte_cdk.models import SyncMode
+from airbyte_cdk.sources.streams.http import HttpSubStream
+from pybloom_live import BloomFilter
+
+from source_bitbucket_cloud.streams.base import BitbucketCloudStream, _make_unique_key
+
 
 logger = logging.getLogger("airbyte")
 
-# Regex to parse "Name <email>" from Bitbucket author.raw
 _AUTHOR_RAW_RE = re.compile(r"^(.*?)\s*<([^>]+)>\s*$")
 
+_BLOOM_CAPACITY = 10_000_000
+_BLOOM_ERROR_RATE = 0.001
 
-class CommitsStream(BitbucketCloudRestStream):
-    """Fetches commits via REST API, partitioned by repo+branch.
 
-    Uses cursor-based pagination (opaque `next` URL from Bitbucket).
-    """
+class CommitsStream(HttpSubStream, BitbucketCloudStream):
 
     name = "commits"
     cursor_field = "date"
+    use_cache = True
+    state_checkpoint_interval = 1000
 
     def __init__(
         self,
-        parent: BranchesStream,
+        parent,
         start_date: Optional[str] = None,
-        page_size: int = 100,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self._parent = parent
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(parent=parent, **kwargs)
         self._start_date = start_date
-        self._page_size = page_size
-        self._partitions_with_errors: set = set()
-        self._current_skipped_siblings: list = []
-        self._current_stop_at_sha: Optional[str] = None
-
+        self._bloom: Optional[BloomFilter] = None
+        self._current_repo_key: Optional[tuple] = None
         self._stop_pagination: bool = False
-        self._seen_hashes: dict[str, str] = {}  # sha → "workspace/slug" (cleared per-repo, unbounded within repo)
-        self._deferred_state_updates: dict[str, dict] = {}  # partition_key → state entry
-        # Temp file for passing commit metadata to file_changes (near-zero memory).
-        self._commit_meta_file = tempfile.NamedTemporaryFile(
-            mode="w", prefix="insight_bb_commits_meta_", suffix=".tsv", delete=False,
-        )
-        self._commit_meta_path = self._commit_meta_file.name
-        self._commit_meta_count: int = 0
-        logger.info(f"Commit metadata temp file: {self._commit_meta_path}")
 
-    def _path(self, stream_slice: Optional[Mapping[str, Any]] = None, **kwargs) -> str:
+    # ------------------------------------------------------------------
+    # Path
+    # ------------------------------------------------------------------
+
+    def _path(self, stream_slice: Optional[Mapping[str, Any]] = None) -> str:
         s = stream_slice or {}
-        workspace = s.get("workspace", "")
-        slug = s.get("slug", "")
-        branch = s.get("branch", "")
-        if not workspace or not slug or not branch:
-            raise ValueError(
-                f"CommitsStream._path() called with incomplete slice: "
-                f"workspace={workspace}, slug={slug}, branch={branch}"
-            )
-        return f"repositories/{workspace}/{slug}/commits/{branch}"
+        branch = s["parent"]
+        return f"repositories/{branch['workspace']}/{branch['repo_slug']}/commits/{branch['name']}"
 
-    def request_params(self, **kwargs) -> dict:
-        return {"pagelen": str(self._page_size)}
-
-    def read_records(self, sync_mode=None, stream_slice=None, stream_state=None, **kwargs):
-        # Self-iterates slices to support per-partition error handling (freeze cursor
-        # on failure, continue sync). Bypasses CDK slice iteration intentionally.
-        if stream_slice is None:
-            for branch_slice in self.stream_slices(stream_state=stream_state):
-                try:
-                    yield from super().read_records(
-                        sync_mode=sync_mode, stream_slice=branch_slice,
-                        stream_state=stream_state, **kwargs,
-                    )
-                except BitbucketAuthError:
-                    raise
-                except Exception as exc:
-                    pk = (
-                        f"{branch_slice.get('workspace', '')}/"
-                        f"{branch_slice.get('slug', '')}/"
-                        f"{branch_slice.get('branch', '')}"
-                    )
-                    self._partitions_with_errors.add(pk)
-                    logger.error(f"Failed commits slice {pk}, cursor frozen: {exc}")
-        else:
-            yield from super().read_records(
-                sync_mode=sync_mode, stream_slice=stream_slice,
-                stream_state=stream_state, **kwargs,
-            )
-
-    def next_page_token(self, response, **kwargs):
-        """Override to stop pagination on dedup exit or previously-seen HEAD."""
+    def next_page_token(self, response):
         if self._stop_pagination:
             self._stop_pagination = False
             return None
-
-        try:
-            data = response.json()
-        except ValueError:
-            return None
-
-        # Check for stop_at_sha in current page
-        if self._current_stop_at_sha:
-            values = data.get("values", [])
-            for commit in values:
-                if commit.get("hash") == self._current_stop_at_sha:
-                    logger.debug(f"Early exit: reached known HEAD {self._current_stop_at_sha[:8]}")
-                    return None
-
-        next_url = data.get("next")
-        if next_url:
-            return {"next_url": next_url}
-        return None
+        return super().next_page_token(response)
 
     # ------------------------------------------------------------------
-    # stream_slices: all branch-level optimizations live here
+    # Slices — reset at start of invocation, sort default-first per repo,
+    #          apply HEAD-unchanged skip and force-push reset
     # ------------------------------------------------------------------
 
     def stream_slices(
         self,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
         stream_state: Optional[Mapping[str, Any]] = None,
-        **kwargs,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
+        # Reset per-invocation state. Critical when this stream is re-invoked
+        # as a parent (file_changes) — otherwise the bloom is still populated
+        # from the prior run and every SHA hits immediately.
+        self._bloom = None
+        self._current_repo_key = None
+        self._stop_pagination = False
+        logger.info(
+            f"commits: stream_slices start sync_mode={sync_mode} "
+            f"start_date={self._start_date or '<none>'} "
+            f"state_entries={len(stream_state or {})}"
+        )
+
         state = stream_state or {}
 
-        # Group all branches by repo
-        repo_branches: dict[tuple, list] = {}
-        for record in self._parent.get_child_records():
-            workspace = record.get("workspace", "")
-            slug = record.get("repo_slug", "")
-            if workspace and slug:
-                repo_branches.setdefault((workspace, slug), []).append(record)
+        buffer: List[Mapping[str, Any]] = []
+        current_repo: Optional[tuple] = None
 
-        repos_skipped_fresh = 0
-        branches_skipped_head = 0
+        for parent_slice in super().stream_slices(
+            sync_mode=sync_mode, cursor_field=cursor_field, stream_state=stream_state,
+        ):
+            branch = parent_slice["parent"]
+            repo_key = (branch["workspace"], branch["repo_slug"])
+            if current_repo is not None and repo_key != current_repo:
+                yield from self._emit_repo(buffer, state)
+                buffer = []
+            current_repo = repo_key
+            buffer.append(parent_slice)
 
-        for (workspace, slug), branches in repo_branches.items():
-            # Bound memory: dedup is per-repo (cross-branch), not cross-repo
-            self._seen_hashes.clear()
+        if buffer:
+            yield from self._emit_repo(buffer, state)
 
-            # --- Optimization 1: Repo freshness gate ---
-            repo_updated_on = ""
-            for record in branches:
-                uo = record.get("updated_on", "")
-                if uo:
-                    repo_updated_on = uo
-                    break
+    def _emit_repo(
+        self,
+        branches: List[Mapping[str, Any]],
+        state: Mapping[str, Any],
+    ) -> Iterable[Mapping[str, Any]]:
+        # Sort: default branch first so the bloom fills with main's history
+        # before feature branches iterate.
+        def sort_key(ps: Mapping[str, Any]) -> int:
+            return 0 if ps["parent"].get("is_default") else 1
 
-            repo_state_key = f"_repo:{workspace}/{slug}"
-            stored_updated_on = state.get(repo_state_key, {}).get("updated_on", "")
-            if repo_updated_on and stored_updated_on and repo_updated_on <= stored_updated_on:
-                repos_skipped_fresh += 1
-                logger.info(f"Repo freshness: skipping {workspace}/{slug} (updated_on unchanged: {repo_updated_on})")
+        branches = sorted(branches, key=sort_key)
+
+        skipped_unchanged = 0
+        for parent_slice in branches:
+            branch = parent_slice["parent"]
+            partition_key = f"{branch['workspace']}/{branch['repo_slug']}/{branch['name']}"
+            stored = state.get(partition_key, {}) or {}
+            stored_cursor = stored.get(self.cursor_field, "") or ""
+            stored_head = stored.get("head_sha", "") or ""
+            current_head = branch.get("target_hash", "") or ""
+            current_head_date = branch.get("target_date", "") or ""
+
+            # HEAD-unchanged skip — safe only when cursor has also reached HEAD's
+            # commit date. A partial run stores head_sha per-record (optimistic),
+            # so head-match alone isn't proof the branch is fully processed.
+            if (
+                stored_head
+                and current_head
+                and stored_head == current_head
+                and current_head_date
+                and stored_cursor
+                and stored_cursor >= current_head_date
+            ):
+                skipped_unchanged += 1
                 continue
 
-            # --- Find default branch ---
-            default_branch = ""
-            for record in branches:
-                db = record.get("mainbranch_name", "")
-                if db:
-                    default_branch = db
-                    break
-
-            # --- Optimization 2: Branch HEAD SHA dedup ---
-            def _sort_key(r, db=default_branch):
-                return 0 if r.get("name") == db else 1
-
-            seen_heads: dict[str, str] = {}
-            skipped_map: dict[str, str] = {}
-            selected: list = []
-            for record in sorted(branches, key=_sort_key):
-                branch_name = record.get("name", "")
-                head_sha = record.get("target_hash", "")
-
-                if not head_sha:
-                    selected.append(record)
-                    continue
-
-                if head_sha in seen_heads:
-                    skipped_map[branch_name] = seen_heads[head_sha]
-                    continue
-
-                seen_heads[head_sha] = branch_name
-                selected.append(record)
-
-            if skipped_map:
+            # Force-push detection — HEAD moved AND new HEAD's commit_date is
+            # not newer than the stored cursor, which means normal pagination
+            # from HEAD down to cursor won't reach the rewritten commits
+            # (rebase preserved author_date). Reset cursor to re-fetch.
+            # Normal push case: new HEAD's commit_date > stored_cursor →
+            # pagination naturally walks from HEAD down to cursor, picking
+            # up the new commits — no reset needed.
+            if (
+                stored_head
+                and current_head
+                and current_head != stored_head
+                and current_head_date
+                and stored_cursor
+                and current_head_date <= stored_cursor
+            ):
                 logger.info(
-                    f"Branch dedup: {workspace}/{slug} - {len(selected)} of {len(branches)} branches "
-                    f"selected, {len(skipped_map)} skipped (duplicate HEAD SHAs)"
+                    f"Force-push detected on {partition_key} "
+                    f"({stored_head[:8]}->{current_head[:8]}, "
+                    f"head_date={current_head_date} ≤ cursor={stored_cursor}): "
+                    f"resetting cursor"
                 )
+                stored_cursor = ""
 
-            # --- Optimization 3: HEAD SHA unchanged -> skip branch ---
-            final_selected: list[tuple] = []
-            for record in selected:
-                branch_name = record.get("name", "")
-                head_sha = record.get("target_hash", "")
-                partition_key = f"{workspace}/{slug}/{branch_name}"
-                stored = state.get(partition_key, {})
-                stored_head = stored.get("head_sha", "")
+            logger.info(
+                f"commits: slice={partition_key} cursor={stored_cursor or '<none>'} "
+                f"head={current_head[:8] if current_head else '<none>'} "
+                f"is_default={branch.get('is_default', False)}"
+            )
+            yield {
+                "parent": branch,
+                "cursor_value": stored_cursor,
+                "head_sha": current_head,
+                "partition_key": partition_key,
+            }
 
-                # HEAD SHA unchanged -> skip entirely
-                if head_sha and stored_head and head_sha == stored_head:
-                    branches_skipped_head += 1
-                    logger.debug(f"HEAD unchanged: skipping {partition_key} (HEAD {head_sha[:8]})")
-                    continue
-
-                final_selected.append((record, head_sha, stored_head))
-
-            if branches_skipped_head:
-                logger.info(
-                    f"Branch optimization: {workspace}/{slug} - {len(final_selected)} branches to fetch, "
-                    f"{branches_skipped_head} skipped (HEAD unchanged)"
-                )
-                branches_skipped_head = 0
-
-            # --- Optimization 4: Seen-hash skip for non-default branches ---
-            branches_skipped_seen = 0
-            for record, head_sha, stored_head in final_selected:
-                branch_name = record.get("name", "")
-
-                # After default branch is processed, _seen_hashes is populated.
-                # Skip non-default branches whose HEAD is already in main's history.
-                if branch_name != default_branch and head_sha and head_sha in self._seen_hashes:
-                    branches_skipped_seen += 1
-                    partition_key = f"{workspace}/{slug}/{branch_name}"
-                    if head_sha:
-                        self._deferred_state_updates[partition_key] = {
-                            **state.get(partition_key, {}),
-                            "head_sha": head_sha,
-                        }
-                    continue
-
-                partition_key = f"{workspace}/{slug}/{branch_name}"
-                cursor_value = state.get(partition_key, {}).get(self.cursor_field)
-
-                # Optimization 5: Force-push detection
-                head_changed = stored_head and head_sha and head_sha != stored_head
-                if head_changed and cursor_value:
-                    logger.info(
-                        f"HEAD changed on {partition_key} "
-                        f"({stored_head[:8]}->{head_sha[:8]}): resetting cursor for re-fetch"
-                    )
-                    cursor_value = None  # falls back to start_date
-
-                yield {
-                    "workspace": workspace,
-                    "slug": slug,
-                    "branch": branch_name,
-                    "default_branch": default_branch,
-                    "partition_key": partition_key,
-                    "cursor_value": cursor_value,
-                    "head_sha": head_sha,
-                    "stop_at_sha": stored_head,
-                    "repo_updated_on": repo_updated_on,
-                    "_skipped_siblings": [
-                        f"{workspace}/{slug}/{sb}"
-                        for sb, chosen in skipped_map.items()
-                        if chosen == branch_name
-                    ],
-                }
-
-            if branches_skipped_seen:
-                logger.info(
-                    f"Seen-hash skip: {workspace}/{slug} - {branches_skipped_seen} non-default branches "
-                    f"skipped (HEAD already in default branch history)"
-                )
+        if skipped_unchanged:
+            logger.info(
+                f"commits: {skipped_unchanged} branches skipped (HEAD unchanged) "
+                f"in repo {branches[0]['parent']['workspace']}/"
+                f"{branches[0]['parent']['repo_slug']}"
+            )
 
     # ------------------------------------------------------------------
-    # parse_response
+    # Parse
     # ------------------------------------------------------------------
 
-    def parse_response(self, response, stream_slice=None, **kwargs):
+    def parse_response(
+        self,
+        response,
+        stream_slice: Optional[Mapping[str, Any]] = None,
+        **kwargs: Any,
+    ):
         s = stream_slice or {}
-        self._current_skipped_siblings = s.get("_skipped_siblings", [])
-        self._current_stop_at_sha = s.get("stop_at_sha")
+        branch = s["parent"]
+        workspace = branch["workspace"]
+        slug = branch["repo_slug"]
+        branch_name = branch["name"]
+        default_branch = branch.get("default_branch_name", "") or ""
         head_sha = s.get("head_sha", "")
-        repo_updated_on = s.get("repo_updated_on", "")
-        default_branch = s.get("default_branch", "")
+        cursor_value = s.get("cursor_value", "")
 
-        partition_key = f"{s.get('workspace', '')}/{s.get('slug', '')}/{s.get('branch', '')}"
-
-        if not self._guard_response(response):
-            return
-
-        data = response.json()
-        values = data.get("values", [])
-        workspace = s.get("workspace", "")
-        slug = s.get("slug", "")
-        branch = s.get("branch", "")
-        cursor_value = s.get("cursor_value")
+        repo_key = (workspace, slug)
+        if repo_key != self._current_repo_key:
+            logger.info(
+                f"commits: new repo {workspace}/{slug} — resetting bloom filter"
+            )
+            self._bloom = BloomFilter(
+                capacity=_BLOOM_CAPACITY, error_rate=_BLOOM_ERROR_RATE,
+            )
+            self._current_repo_key = repo_key
 
         hit_seen = False
-        for commit in values:
-            commit_hash = commit.get("hash", "")
-            commit_date = commit.get("date", "")
+        emitted = 0
+        bloom_hits = 0
+        for commit in self._iter_values(response):
+            commit_hash = commit.get("hash", "") or ""
+            commit_date = commit.get("date", "") or ""
 
-            # Early exit: stop at previously-seen HEAD
-            if self._current_stop_at_sha and commit_hash == self._current_stop_at_sha:
-                logger.debug(f"Early exit: reached known commit {commit_hash[:8]} on {workspace}/{slug}/{branch}")
-                self._stop_pagination = True
-                return
-
-            # Date-based filtering for incremental sync
             if cursor_value and commit_date and commit_date <= cursor_value:
                 self._stop_pagination = True
+                logger.info(
+                    f"commits: {workspace}/{slug}/{branch_name} cursor early-exit "
+                    f"at {commit_date} cursor={cursor_value} "
+                    f"(page emitted={emitted} bloom_hits={bloom_hits})"
+                )
                 return
 
-            # Start date filter for first sync
             if self._start_date and commit_date and commit_date[:10] < self._start_date:
                 self._stop_pagination = True
+                logger.info(
+                    f"commits: {workspace}/{slug}/{branch_name} start_date cutoff "
+                    f"at {commit_date} (page emitted={emitted} bloom_hits={bloom_hits})"
+                )
                 return
 
-            # Dedup: skip commits already seen from earlier branches
-            if commit_hash in self._seen_hashes:
+            if commit_hash and commit_hash in self._bloom:
                 hit_seen = True
+                bloom_hits += 1
                 continue
-            self._seen_hashes[commit_hash] = f"{workspace}/{slug}"
+            if commit_hash:
+                self._bloom.add(commit_hash)
+            emitted += 1
 
             author = commit.get("author") or {}
-            author_raw = author.get("raw", "")
+            author_raw = author.get("raw", "") or ""
             author_user = author.get("user") or {}
-
-            # Parse "Name <email>" from author.raw
             author_name = author_raw
             author_email = None
-            match = _AUTHOR_RAW_RE.match(author_raw)
-            if match:
-                author_name = match.group(1).strip()
-                author_email = match.group(2).strip()
+            m = _AUTHOR_RAW_RE.match(author_raw)
+            if m:
+                author_name = m.group(1).strip()
+                author_email = m.group(2).strip()
 
             parents = commit.get("parents") or []
             parent_hashes = [p.get("hash", "") for p in parents if p.get("hash")]
@@ -351,10 +269,6 @@ class CommitsStream(BitbucketCloudRestStream):
                 "unique_key": _make_unique_key(
                     self._tenant_id, self._source_id, workspace, slug, commit_hash,
                 ),
-                "tenant_id": self._tenant_id,
-                "source_id": self._source_id,
-                "data_source": "insight_bitbucket_cloud",
-                "collected_at": _now_iso(),
                 "hash": commit_hash,
                 "message": commit.get("message"),
                 "date": commit_date,
@@ -367,29 +281,25 @@ class CommitsStream(BitbucketCloudRestStream):
                 "parent_hashes": parent_hashes,
                 "workspace": workspace,
                 "repo_slug": slug,
-                "branch_name": branch,
+                "branch_name": branch_name,
                 "default_branch_name": default_branch,
                 "head_sha": head_sha,
-                "repo_updated_on": repo_updated_on,
             }
-            yield record
+            yield self._envelope(record)
 
-            # Write metadata row for file_changes stream (TSV, disk-backed)
-            parent_count = len(parent_hashes)
-            self._commit_meta_file.write(
-                f"{commit_hash}\t{workspace}\t{slug}\t{commit_date}\t{parent_count}\n"
-            )
-            self._commit_meta_count += 1
-
-        # If we hit any already-seen commit, the rest of this branch is shared
-        # history (commits are newest-first). Stop paginating.
-        if hit_seen and values:
-            logger.debug(f"Dedup exit: hit seen commit on {workspace}/{slug}/{branch}, stopping pagination")
+        logger.debug(
+            f"commits: {workspace}/{slug}/{branch_name} page emitted={emitted} "
+            f"bloom_hits={bloom_hits}"
+        )
+        if hit_seen:
             self._stop_pagination = True
-            return
+            logger.info(
+                f"commits: {workspace}/{slug}/{branch_name} bloom hit — "
+                f"stopping pagination (branch merged into already-seen history)"
+            )
 
     # ------------------------------------------------------------------
-    # get_updated_state: per-partition cursor with head_sha + updated_on
+    # State
     # ------------------------------------------------------------------
 
     def get_updated_state(
@@ -402,55 +312,21 @@ class CommitsStream(BitbucketCloudRestStream):
             f"{latest_record.get('repo_slug', '')}/"
             f"{latest_record.get('branch_name', '')}"
         )
-        if partition_key in self._partitions_with_errors:
-            return current_stream_state
-
-        record_cursor = latest_record.get(self.cursor_field, "")
-        current_cursor = current_stream_state.get(partition_key, {}).get(self.cursor_field, "")
-        head_sha = latest_record.get("head_sha", "")
-        cursor_entry = dict(current_stream_state.get(partition_key, {}))
-        if record_cursor > current_cursor:
-            cursor_entry[self.cursor_field] = record_cursor
+        record_date = latest_record.get(self.cursor_field, "") or ""
+        head_sha = latest_record.get("head_sha", "") or ""
+        entry = dict(current_stream_state.get(partition_key, {}) or {})
+        prev_date = entry.get(self.cursor_field, "") or ""
+        if record_date and record_date > prev_date:
+            entry[self.cursor_field] = record_date
         if head_sha:
-            cursor_entry["head_sha"] = head_sha
-        if cursor_entry:
-            current_stream_state[partition_key] = cursor_entry
-
-            # Mirror cursor to skipped siblings (same HEAD SHA)
-            for sibling_key in self._current_skipped_siblings:
-                sibling_cursor = current_stream_state.get(sibling_key, {}).get(self.cursor_field, "")
-                if record_cursor > sibling_cursor:
-                    current_stream_state[sibling_key] = dict(cursor_entry)
-
-        # Store repo updated_on for freshness gate
-        repo_updated_on = latest_record.get("repo_updated_on", "")
-        if repo_updated_on:
-            workspace = latest_record.get("workspace", "")
-            slug = latest_record.get("repo_slug", "")
-            repo_state_key = f"_repo:{workspace}/{slug}"
-            current_stream_state[repo_state_key] = {"updated_on": repo_updated_on}
-
-        # Apply deferred state updates (from seen-hash skipped branches in stream_slices)
-        if self._deferred_state_updates:
-            for key, entry in self._deferred_state_updates.items():
-                if key not in current_stream_state:
-                    current_stream_state[key] = entry
-                else:
-                    current_stream_state[key] = {**current_stream_state[key], **entry}
-            self._deferred_state_updates.clear()
-
+            entry["head_sha"] = head_sha
+        if entry:
+            current_stream_state[partition_key] = entry
         return current_stream_state
 
-    def get_commit_meta_path(self) -> str:
-        """Return path to temp file with commit metadata for file_changes.
-
-        Format: TSV with columns hash, workspace, slug, date, parent_count.
-        Must be called after the commits stream has been fully driven by the CDK.
-        """
-        if not self._commit_meta_file.closed:
-            self._commit_meta_file.close()
-        logger.info(f"Commit metadata: {self._commit_meta_count} rows written to {self._commit_meta_path}")
-        return self._commit_meta_path
+    # ------------------------------------------------------------------
+    # Schema
+    # ------------------------------------------------------------------
 
     def get_json_schema(self) -> Mapping[str, Any]:
         return {
@@ -477,5 +353,6 @@ class CommitsStream(BitbucketCloudRestStream):
                 "repo_slug": {"type": "string"},
                 "branch_name": {"type": "string"},
                 "default_branch_name": {"type": ["null", "string"]},
+                "head_sha": {"type": ["null", "string"]},
             },
         }
