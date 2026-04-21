@@ -283,18 +283,46 @@ pub async fn query_metric(
 
     // MVP: single tenant — skip tenant isolation filter.
     // TODO: re-enable for multi-tenant: WHERE insight_tenant_id = ?
-    let mut sql = format!("SELECT {select_expr} FROM {from_clause} WHERE 1=1");
     let mut params: Vec<String> = vec![];
+
+    // If the FROM clause is a subquery, we inject the metric_date range INSIDE the
+    // subquery (before its GROUP BY). Keeps per-person aggregation bounded to the
+    // selected period. Outer person_id/org_unit_id filters still apply post-aggregate.
+    let (mut effective_from, date_pushed) = if let Some(ref filter) = req.filter {
+        let date_from = extract_odata_value(filter, "metric_date", "ge");
+        let date_to = extract_odata_value(filter, "metric_date", "lt");
+        if (date_from.is_some() || date_to.is_some()) && from_clause.trim_start().starts_with('(') {
+            let mut clauses: Vec<String> = vec![];
+            if let Some(ref v) = date_from {
+                clauses.push(format!("metric_date >= '{}'", v.replace('\'', "''")));
+            }
+            if let Some(ref v) = date_to {
+                clauses.push(format!("metric_date < '{}'", v.replace('\'', "''")));
+            }
+            let where_inner = format!(" WHERE {}", clauses.join(" AND "));
+            (inject_where_into_first_subquery(&from_clause, &where_inner)
+                .unwrap_or_else(|| from_clause.clone()), true)
+        } else {
+            (from_clause.clone(), false)
+        }
+    } else {
+        (from_clause.clone(), false)
+    };
+    let _ = effective_from;
+
+    let mut sql = format!("SELECT {select_expr} FROM {effective_from} WHERE 1=1");
 
     // Parse OData $filter (simplified — production needs a proper OData parser)
     if let Some(ref filter) = req.filter {
-        if let Some(date_from) = extract_odata_value(filter, "metric_date", "ge") {
-            sql.push_str(" AND metric_date >= ?");
-            params.push(date_from);
-        }
-        if let Some(date_to) = extract_odata_value(filter, "metric_date", "lt") {
-            sql.push_str(" AND metric_date < ?");
-            params.push(date_to);
+        if !date_pushed {
+            if let Some(date_from) = extract_odata_value(filter, "metric_date", "ge") {
+                sql.push_str(" AND metric_date >= ?");
+                params.push(date_from);
+            }
+            if let Some(date_to) = extract_odata_value(filter, "metric_date", "lt") {
+                sql.push_str(" AND metric_date < ?");
+                params.push(date_to);
+            }
         }
         // Person filter — use person_id directly (no Identity Resolution for MVP).
         // Gold tables have a resolved person_id column; Silver tables would need
@@ -434,12 +462,127 @@ fn extract_odata_value(filter: &str, field: &str, op: &str) -> Option<String> {
 ///
 /// The engine rebuilds the query with `WHERE insight_tenant_id = ?` always
 /// injected, so admins cannot bypass tenant isolation.
+/// Inject `where_clause` (` WHERE ...`) into every *leafmost* `(SELECT ...)` subquery
+/// inside `from_clause`. A leaf subquery is one whose own FROM is a table (not another
+/// subquery). This guarantees the metric_date filter lands at the level where the raw
+/// table with a metric_date column is actually read. JOIN branches and nested
+/// subqueries are recursed into; the filter is applied only at the innermost SELECT.
+fn inject_where_into_first_subquery(from_clause: &str, where_clause: &str) -> Option<String> {
+    let (new_from, injected) = walk_inject(from_clause, where_clause);
+    if injected { Some(new_from) } else { None }
+}
+
+fn walk_inject(from_clause: &str, where_clause: &str) -> (String, bool) {
+    let bytes = from_clause.as_bytes();
+    let mut result = String::with_capacity(from_clause.len() + where_clause.len() * 2);
+    let mut i = 0;
+    let mut any = false;
+    while i < bytes.len() {
+        if bytes[i] == b'(' {
+            // Find matching close paren.
+            let mut depth: i32 = 1;
+            let mut j = i + 1;
+            while j < bytes.len() && depth > 0 {
+                match bytes[j] { b'(' => depth += 1, b')' => depth -= 1, _ => {} }
+                if depth == 0 { break; }
+                j += 1;
+            }
+            if j >= bytes.len() {
+                result.push_str(&from_clause[i..]);
+                break;
+            }
+            let inner = &from_clause[i + 1..j];
+            let after_paren_start = j + 1;
+
+            // Skip non-SELECT groups (e.g., lower(x)).
+            let is_select = inner.trim_start().to_ascii_uppercase().starts_with("SELECT ");
+            if is_select {
+                let (processed, did_inject) = process_select(inner, where_clause);
+                if did_inject { any = true; }
+                result.push('(');
+                result.push_str(&processed);
+                result.push(')');
+            } else {
+                result.push_str(&from_clause[i..=j]);
+            }
+            i = after_paren_start;
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    (result, any)
+}
+
+/// Process the body of a (SELECT ...) subquery. If its own FROM is itself a subquery,
+/// recurse; otherwise inject WHERE at this level.
+fn process_select(inner: &str, where_clause: &str) -> (String, bool) {
+    let inner_upper = inner.to_ascii_uppercase();
+    let from_pos = find_at_depth_zero(&inner_upper, " FROM ");
+    let from_pos = match from_pos {
+        Some(p) => p,
+        None => return (inner.to_string(), false),
+    };
+    let after_from = &inner[from_pos + 6..];
+
+    // Separate sub-FROM from optional trailing " GROUP BY ..." / " WHERE ..." etc.
+    // We only care whether the FROM clause itself starts with `(`.
+    let after_trim = after_from.trim_start();
+    if after_trim.starts_with('(') {
+        // Recurse into nested FROM. We need to extract the FROM clause up to its
+        // end (before GROUP BY at depth 0 in after_from).
+        let after_from_upper = after_from.to_ascii_uppercase();
+        let gb_pos = find_at_depth_zero(&after_from_upper, " GROUP BY ");
+        let (inner_from, rest) = match gb_pos {
+            Some(pos) => (&after_from[..pos], &after_from[pos..]),
+            None => (after_from, ""),
+        };
+        let (new_inner_from, nested_did) = walk_inject(inner_from, where_clause);
+        let rebuilt = format!("{} FROM {}{}", &inner[..from_pos], new_inner_from, rest);
+        (rebuilt, nested_did)
+    } else {
+        // Leaf: inject WHERE before GROUP BY (or at end).
+        let gb_pos = find_at_depth_zero(&inner_upper, " GROUP BY ");
+        let existing_where = find_at_depth_zero(&inner_upper, " WHERE ");
+        let injected = match (existing_where, gb_pos) {
+            (Some(ewp), _) => {
+                let extra = where_clause.trim_start().trim_start_matches("WHERE ");
+                let ip = ewp + " WHERE ".len();
+                format!("{}{} AND {}", &inner[..ip], extra, &inner[ip..])
+            }
+            (None, Some(pos)) => format!("{}{}{}", &inner[..pos], where_clause, &inner[pos..]),
+            (None, None) => format!("{}{}", inner, where_clause),
+        };
+        (injected, true)
+    }
+}
+
+/// Find the position of `needle` in `haystack` at paren-depth 0 (skipping occurrences
+/// inside nested parentheses). Returns byte position of the start of the match.
+fn find_at_depth_zero(haystack: &str, needle: &str) -> Option<usize> {
+    let bytes = haystack.as_bytes();
+    let needle_bytes = needle.as_bytes();
+    let mut depth: i32 = 0;
+    let mut i = 0;
+    while i + needle_bytes.len() <= bytes.len() {
+        match bytes[i] {
+            b'(' => depth += 1,
+            b')' => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && bytes[i..].starts_with(needle_bytes) {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
 fn parse_query_ref(query_ref: &str) -> Result<(String, String, Option<String>), String> {
     let upper = query_ref.to_ascii_uppercase();
 
-    // Find SELECT ... FROM boundary
-    let from_pos = upper
-        .find(" FROM ")
+    // Find SELECT ... FROM boundary at depth 0 (skip FROM inside subqueries).
+    let from_pos = find_at_depth_zero(&upper, " FROM ")
         .ok_or("query_ref must contain SELECT ... FROM ...")?;
 
     let select_expr = query_ref[..from_pos]
@@ -455,8 +598,8 @@ fn parse_query_ref(query_ref: &str) -> Result<(String, String, Option<String>), 
 
     let after_from = &query_ref[from_pos + 6..]; // skip " FROM "
 
-    // Find optional GROUP BY
-    let group_by_pos = upper[from_pos + 6..].find(" GROUP BY ");
+    // Find optional GROUP BY at depth 0 (skip GROUP BY inside subqueries).
+    let group_by_pos = find_at_depth_zero(&upper[from_pos + 6..], " GROUP BY ");
     let (from_part, group_by) = match group_by_pos {
         Some(pos) => (
             after_from[..pos].trim(),
@@ -482,36 +625,33 @@ fn parse_query_ref(query_ref: &str) -> Result<(String, String, Option<String>), 
 fn validate_from_clause(from_clause: &str) -> Result<(), String> {
     let upper = from_clause.to_ascii_uppercase();
 
-    // Reject dangerous patterns
-    if upper.contains("WHERE ") {
-        return Err("FROM clause must not contain WHERE".to_owned());
+    // Reject dangerous patterns. WHERE is forbidden at depth 0 (would let admins inject
+    // arbitrary filters) but allowed inside subqueries (legitimate nested WHERE).
+    if find_at_depth_zero(&upper, " WHERE ").is_some() {
+        return Err("FROM clause must not contain WHERE at top level".to_owned());
     }
     if from_clause.contains(';') {
         return Err("FROM clause must not contain semicolons".to_owned());
     }
-    // Reject subqueries: parentheses before any ON keyword indicate a subquery
-    // in the table position. Parentheses after ON are fine (e.g. `lower(c.email)`).
-    let first_on = upper.find(" ON ");
-    let first_paren = from_clause.find('(');
-    if let Some(paren_pos) = first_paren {
-        match first_on {
-            None => return Err("FROM clause must not contain subqueries".to_owned()),
-            Some(on_pos) if paren_pos < on_pos => {
-                return Err("FROM clause must not contain subqueries".to_owned());
-            }
-            _ => {} // parens after ON — OK (function calls in join conditions)
+    // LOCAL DEV: subqueries in FROM are allowed (needed for two-level aggregation).
+    // If ANY paren exists in the FROM clause it's treated as a subquery-in-FROM —
+    // skip segment validation (admins are trusted here; we still block destructive
+    // keywords and top-level WHERE).
+    let has_paren = from_clause.contains('(');
+
+    if !has_paren {
+        // Split on JOIN keywords to get each table reference
+        // e.g. "t1 c JOIN t2 e ON c.x = e.y LEFT JOIN t3 f ON ..."
+        // We validate table names and aliases, and allow ON conditions.
+        let join_re = ["JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "CROSS JOIN"];
+
+        // Extract table references by splitting on JOIN boundaries
+        let segments = split_on_joins(&upper, from_clause);
+        for segment in &segments {
+            validate_table_segment(segment)?;
         }
-    }
 
-    // Split on JOIN keywords to get each table reference
-    // e.g. "t1 c JOIN t2 e ON c.x = e.y LEFT JOIN t3 f ON ..."
-    // We validate table names and aliases, and allow ON conditions.
-    let join_re = ["JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "CROSS JOIN"];
-
-    // Extract table references by splitting on JOIN boundaries
-    let segments = split_on_joins(&upper, from_clause);
-    for segment in &segments {
-        validate_table_segment(segment)?;
+        let _ = join_re; // suppress unused warning
     }
 
     // Extra safety: ensure no SQL keywords that shouldn't be here
@@ -521,7 +661,6 @@ fn validate_from_clause(from_clause: &str) -> Result<(), String> {
         }
     }
 
-    let _ = join_re; // suppress unused warning
     Ok(())
 }
 
