@@ -1,8 +1,9 @@
 version: 2
 
-sources:
-  # bronze_cursor is declared in connectors/ai/cursor/dbt/schema.yml (with full table list)
-  # bronze_claude_admin is declared in connectors/ai/claude-admin/dbt/schema.yml
+# Sources used by the identity seeds below are declared in their respective
+# connector schema.yml files:
+#   - bronze_cursor        → connectors/ai/cursor/dbt/schema.yml
+#   - bronze_claude_admin  → connectors/ai/claude-admin/dbt/schema.yml
 
 models:
   # --- Cursor seed ---
