@@ -74,8 +74,8 @@ jobs:
         with:
           images: ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}
           tags: |
+            type=raw,value={{date 'YYYY.MM.DD.HH.mm'}}-{{sha}},enable={{is_default_branch}}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=
 
       - uses: docker/build-push-action@v6
         with:
@@ -107,8 +107,8 @@ jobs:
         with:
           images: ${{ env.IMAGE_PREFIX }}/insight-toolbox
           tags: |
+            type=raw,value={{date 'YYYY.MM.DD.HH.mm'}}-{{sha}},enable={{is_default_branch}}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=
 
       - uses: docker/build-push-action@v6
         with:
