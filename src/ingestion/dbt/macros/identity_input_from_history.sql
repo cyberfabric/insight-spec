@@ -28,7 +28,7 @@
 
   Output columns (match identity.input schema):
     insight_tenant_id, source_type, source_id, profile_id,
-    field_type, field_value, field_path, operation, observed_at, _synced_at
+    field_type, field_value, field_path, operation, observed_at, _synced_at, _version
 #}
 
 WITH history AS (
@@ -53,7 +53,8 @@ upserts AS (
         -- empty new_value = field was cleared (tombstone), non-empty = field changed
         if(coalesce(new_value, '') = '', 'DELETE', 'UPSERT') AS operation,
         updated_at AS observed_at,
-        now64(3) AS _synced_at
+        now64(3) AS _synced_at,
+        toUnixTimestamp64Milli(now64()) AS _version
     FROM history
     WHERE field_name = '{{ f.field }}'
     {{ 'UNION ALL' if not loop.last }}
@@ -83,7 +84,8 @@ deletes AS (
         '{{ f.field_path }}' AS field_path,
         'DELETE' AS operation,
         d.updated_at AS observed_at,
-        now64(3) AS _synced_at
+        now64(3) AS _synced_at,
+        toUnixTimestamp64Milli(now64()) AS _version
     FROM deactivation_events d
     {{ 'UNION ALL' if not loop.last }}
     {% endfor %}
