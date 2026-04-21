@@ -18,7 +18,7 @@ SELECT
     argMax(department, _airbyte_extracted_at)    AS org_unit_name,
     argMax(
         multiIf(
-            jobTitle ILIKE '%senior%' OR jobTitle ILIKE '%lead%' OR jobTitle ILIKE '%principal%' OR jobTitle ILIKE '%architect%' OR jobTitle ILIKE '%director%' OR jobTitle ILIKE '%head%', 'Senior',
+            jobTitle ILIKE '%senior%' OR jobTitle ILIKE '%lead%' OR jobTitle ILIKE '%principal%' OR jobTitle ILIKE '%architect%' OR jobTitle ILIKE '%director%' OR jobTitle ILIKE '%head%' OR jobTitle ILIKE '%vice president%' OR jobTitle ILIKE '%vp of%' OR jobTitle ILIKE 'vp %' OR jobTitle ILIKE '%chief%' OR jobTitle ILIKE '%president%' OR jobTitle ILIKE '%ceo%' OR jobTitle ILIKE '%cto%' OR jobTitle ILIKE '%cfo%' OR jobTitle ILIKE '%coo%' OR jobTitle ILIKE '%executive%', 'Senior',
             jobTitle ILIKE '%junior%' OR jobTitle ILIKE '%intern%' OR jobTitle ILIKE '%trainee%', 'Junior',
             'Mid'
         ),
