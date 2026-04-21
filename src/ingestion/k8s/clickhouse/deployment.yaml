@@ -43,16 +43,20 @@ spec:
               subPath: cluster.xml
               readOnly: true
           readinessProbe:
-            httpGet:
-              path: /ping
-              port: http
+            exec:
+              command:
+                - bash
+                - -c
+                - "clickhouse-client --password \"${CLICKHOUSE_PASSWORD}\" --query 'SELECT 1'"
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
           livenessProbe:
-            httpGet:
-              path: /ping
-              port: http
+            exec:
+              command:
+                - bash
+                - -c
+                - "clickhouse-client --password \"${CLICKHOUSE_PASSWORD}\" --query 'SELECT 1'"
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 3
