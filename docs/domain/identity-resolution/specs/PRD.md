@@ -157,10 +157,11 @@ Insight connects to 10+ external platforms (GitLab, GitHub, Jira, YouTrack, Bamb
 - Merge/split operations with full audit trail via `merge_audits` (late phase)
 - GDPR alias deletion: move to `alias_gdpr_deleted`, remove from `aliases` (late phase)
 - ClickHouse Dictionary for hot-path analytical lookups (optional optimization)
+- **Persons identity-attribute history**: MariaDB `persons` table and its one-shot seed from `identity_inputs` (see DESIGN §3.7 and ADR-0002). Schema / CRUD / seed are owned by this domain; the Person domain reads the resulting rows to build its golden record.
 
 ### 4.2 Out of Scope
 
-- **Person registry**: `persons` table, person attributes, golden record assembly, person-level conflict detection — see person domain PRD
+- **Person golden record**: assembly of the best-value `persons` record per attribute with source-priority rules, person-level conflict detection — see person domain PRD. (This domain records raw observations; the person domain projects them into a single golden record.)
 - **Org hierarchy**: `org_units`, `person_assignments`, SCD Type 2 history — see org-chart domain PRD
 - **Connector implementation**: How connectors sync data from external platforms — see connector specifications
 - **Permission / RBAC**: Access control, data visibility rules — see permissions domain

@@ -404,6 +404,12 @@ for connector_name, source_id_label, config in connector_instances:
                 stream_name = stream_def.get("name", "")
                 supported = stream_def.get("supportedSyncModes", ["full_refresh"])
                 sync_mode = "incremental" if "incremental" in supported else "full_refresh"
+                # full_refresh streams use "overwrite" (not "append") so repeated
+                # full-refresh syncs replace the Bronze table instead of stacking
+                # duplicate snapshots. This only applies to **new** connections
+                # created by this script: existing connections in state.yaml keep
+                # whatever destinationSyncMode they already have -- to migrate
+                # them, delete the connection and re-run `connect.sh --all`.
                 dest_sync_mode = "append_dedup" if sync_mode == "incremental" else "overwrite"
                 stream_config = {
                     "syncMode": sync_mode,

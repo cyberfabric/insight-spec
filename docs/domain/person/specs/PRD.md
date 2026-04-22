@@ -129,8 +129,8 @@ Insight connects to 10+ external platforms, each contributing partial person dat
 
 ### 3.1 Module-Specific Environment Constraints
 
-- **Storage**: All person domain tables reside in ClickHouse. No separate RDBMS.
-- **Shared input**: Person-attribute observations originate from the `identity_inputs` table owned by the Identity Resolution domain.
+- **Storage**: The Person-domain analytical tables (golden-record projection, `person_availability`, `person_conflicts`) reside in ClickHouse. The MariaDB-backed `persons` identity-attribute history table read by this domain is owned and maintained by the Identity-Resolution domain (see identity-resolution DESIGN §3.7 and ADR-0004).
+- **Shared input**: Person-attribute observations originate from two sources — the `identity_inputs` ClickHouse table (connector-sourced) and the MariaDB `persons` history table (operator edits), both owned by the Identity Resolution domain.
 - **SCD history**: Historical versions of person records are managed by dbt macros (SCD Type 2 / Type 3). This domain defines the current-state table; history schemas are out of scope.
 - **Naming**: All tables and columns follow the shared glossary conventions.
 
@@ -407,9 +407,9 @@ The system **MUST** return a single person record (GET /persons/:id) in < 50 ms 
 
 **Compatibility**: The `id` UUID format and column name are stable. Adding new golden record columns is backward-compatible. Renaming or removing columns is breaking.
 
-#### Bootstrap Inputs Read Contract
+#### Identity Inputs Read Contract
 
-- [ ] `p1` - **ID**: `cpt-person-contract-bootstrap-inputs-read`
+- [ ] `p1` - **ID**: `cpt-person-contract-identity-inputs-read`
 
 **Direction**: required from external (reads from IR domain's `identity_inputs` table)
 

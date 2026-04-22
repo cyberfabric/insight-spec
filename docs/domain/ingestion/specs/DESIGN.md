@@ -647,14 +647,14 @@ K8s Cluster
 ├── namespace: argo
 │   ├── Argo Server (API + UI)
 │   └── Argo Controller (workflow execution)
-└── namespace: data
-    └── ClickHouse (single-node or cluster)
-├── namespace: insight
-│   ├── MariaDB (metric definitions, service metadata)
-│   ├── Analytics API (Rust/Axum)
-│   ├── Identity Resolution (Rust stub)
-│   ├── API Gateway (Rust/Axum, OIDC, proxy)
-│   └── Frontend (SPA, nginx)
+├── namespace: data
+│   └── ClickHouse (single-node or cluster)
+└── namespace: insight
+    ├── MariaDB (metric definitions, service metadata)
+    ├── Analytics API (Rust/Axum)
+    ├── Identity Resolution (Rust stub)
+    ├── API Gateway (Rust/Axum, OIDC, proxy)
+    └── Frontend (SPA, nginx)
 ```
 
 Key deployment decisions:
@@ -670,7 +670,9 @@ Key deployment decisions:
 - Argo `dbt-run` WorkflowTemplate uses locally-built `insight-toolbox:local` image (with `imagePullPolicy: IfNotPresent`) — not `ghcr.io/cyberfabric/insight-toolbox:latest`. Local builds via `tools/toolbox/build.sh` pick up dbt model changes without requiring a registry push. Template also accepts `full_refresh` parameter (pass `--full-refresh` to recreate tables from scratch)
 - CoreDNS is patched to use public DNS upstream (`8.8.8.8`, `8.8.4.4`) — WSL's `/etc/resolv.conf` points to an internal WSL nameserver that cannot reliably resolve external domains (e.g. `login.microsoftonline.com`). Patch is applied by `up.sh` and verified by `restart.sh`
 - `restart.sh` also cleans up stale Airbyte replication-job pods (from previous syncs that did not exit cleanly)
-- Gold views migration (`20260417000000_gold-views.sql`) references bronze tables from optional connectors (jira, m365, zoom). For connectors **without a credential secret** (`secrets/connectors/<name>.yaml` missing), `scripts/create-bronze-placeholders.sh` creates empty placeholder tables with compatible schema so the migration succeeds. When the connector is later configured and syncs for the first time, Airbyte replaces the placeholder with a real table using its native schema. Script runs automatically via `init.sh` before migrations
+- Gold views migration (`20260417000000_gold-views.sql`) references bronze tables from optional connectors (jira, m365, zoom). For connectors **without a credential secret** (neither `secrets/connectors/<name>.yaml` on disk nor a corresponding `airbyte-<connector>` Kubernetes Secret in the `airbyte` namespace), `scripts/create-bronze-placeholders.sh` creates empty placeholder tables with a minimal compatible schema so the gold-views migration succeeds on a partial install.
+  - **Placeholder handoff caveat**: Airbyte ClickHouse destination v2.0.8+ throws an error on the first sync if the target bronze table exists with a schema that does not match the destination's expected schema for that stream. The placeholder schemas in `create-bronze-placeholders.sh` are intentionally minimal (only the columns referenced by gold views) — they are **not** a drop-in replacement for a native Airbyte-generated table. Before enabling a previously-placeholdered connector, the operator should manually `DROP TABLE` the placeholder(s) in ClickHouse so Airbyte can create them fresh on its first sync.
+  - Script runs automatically via `init.sh` before migrations.
 - All credentials managed via Kubernetes Secrets (see §4.1.1)
 - Service access via NodePort: Airbyte (8000), Argo UI (30500), ClickHouse (30123)
 

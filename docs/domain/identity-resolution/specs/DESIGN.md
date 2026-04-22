@@ -48,9 +48,11 @@
 
 Identity Resolution maps disparate identity signals — emails, usernames, employee IDs, platform-specific handles — from all connected source systems into canonical person records stored in the Person domain. It operates as the bridge between raw connector data and a unified person model: connectors emit alias observations into the `identity_inputs` table; the BootstrapJob processes those observations into the `aliases` table; and the ResolutionService exposes a query API for downstream consumers to resolve any alias to a `person_id`.
 
-The architecture is ClickHouse-native. All tables — `identity_inputs`, `aliases`, `match_rules`, `unmapped`, `conflicts`, `merge_audits`, `alias_gdpr_deleted` — reside in ClickHouse. There is no RDBMS layer. Merge/split atomicity, previously achieved via RDBMS transactions, is handled through idempotent operations and audit-trail patterns in ClickHouse (snapshot-before/after in `merge_audits`). SCD Type 2 history for persons and org units is managed by dbt macros in their respective domains (person, org-chart) and is out of scope for this design.
+The analytical tables of this domain are ClickHouse-native — `identity_inputs`, `aliases`, `match_rules`, `unmapped`, `conflicts`, `merge_audits`, `alias_gdpr_deleted` all reside in ClickHouse. Merge/split atomicity, previously achieved via RDBMS transactions, is handled through idempotent operations and audit-trail patterns in ClickHouse (snapshot-before/after in `merge_audits`). SCD Type 2 history for org units is managed by dbt macros in the org-chart domain and is out of scope for this design.
 
-This domain is deliberately narrow: it owns alias-to-person mapping and nothing else. The `persons` table, golden record assembly, person-level conflict detection, availability, and org hierarchy all belong to the person and org-chart domains. Identity Resolution produces `aliases` rows; the person domain consumes them.
+In addition to the analytical ClickHouse store, this domain owns one MariaDB table — `persons` (see §3.7) — which records the history of identity-field observations per person in a CRUD-friendly, transactional store. The Person domain reads from it to build its golden record; it is initialised by a one-shot seed from `identity_inputs` (see ADR-0002) and maintained by operator edits and the Bootstrap Pipeline going forward.
+
+This domain is deliberately narrow: it owns alias-to-person mapping and the `persons` identity-attribute history table. Golden record assembly, person-level conflict detection, availability, and org hierarchy all belong to the person and org-chart domains. Identity Resolution produces `aliases` rows and `persons` observations; the person domain consumes them.
 
 ### 1.2 Architecture Drivers
 
@@ -173,11 +175,13 @@ Deterministic matching first (exact email, exact HR ID). Fuzzy matching is opt-i
 
 ### 2.2 Constraints
 
-#### ClickHouse-Only Storage
+#### Storage Split: Analytical in ClickHouse, Identity-History in MariaDB
 
-- [ ] `p2` - **ID**: `cpt-insightspec-ir-constraint-ch-only`
+- [ ] `p2` - **ID**: `cpt-insightspec-ir-constraint-storage-split`
 
-All tables in the identity resolution domain are stored in ClickHouse. No PostgreSQL, no MariaDB. This is a project-wide decision: all tables across all three domains (identity-resolution, person, org-chart) are in ClickHouse. Merge/split atomicity is achieved through idempotent snapshot-based operations, not ACID transactions.
+Analytical tables (`identity_inputs`, `aliases`, `match_rules`, `unmapped`, `conflicts`, `merge_audits`, `alias_gdpr_deleted`) are stored in ClickHouse — optimised for read-heavy analytical queries; merge/split atomicity is achieved through idempotent snapshot-based operations, not ACID transactions.
+
+The identity-attribute history table (`persons`) is stored in MariaDB (see §3.7) — a CRUD-friendly transactional store is the right fit for row-level operator edits, audit trails, and the backend APIs that read it. Schema is maintained by the MariaDB migration runner (see ingestion DESIGN.md §4.4 and ADR-0004).
 
 
 #### PR #55 Naming Conventions
@@ -205,14 +209,18 @@ All tables and columns follow the PR #55 glossary naming conventions:
 
 - [ ] `p2` - **ID**: `cpt-insightspec-ir-constraint-domain-boundary`
 
+Identity resolution owns:
+- All `identity_inputs` / `aliases` / matching / conflict / merge tables in ClickHouse (§2.1, §3.x)
+- The MariaDB `persons` identity-attribute history table (§3.7) and its one-shot seed (ADR-0002)
+
 Identity resolution does NOT own or write to:
-- `persons` table (person domain)
+- The Person-domain **golden record** (derived from `persons` observations by the person domain)
 - `person_availability` (person domain)
 - `org_units` table (org-chart domain)
 - `person_assignments` table (org-chart domain)
 - Any permission/RBAC tables (separate domain)
 
-Identity resolution references `persons.id` as a logical foreign key in `aliases.person_id`. The person domain is responsible for creating person records; identity resolution links aliases to existing persons.
+The person domain reads `persons` observations to build its golden record; identity resolution links aliases to `person_id`s. `person_id` is assigned deterministically by this domain's seed and is the join key across both domains.
 
 
 #### No Fuzzy Auto-Link
@@ -737,13 +745,13 @@ Field-level identity attribute history for persons, stored in MariaDB. Each row 
 | Column | Type | Description |
 |---|---|---|
 | `id` | `BIGINT UNSIGNED AUTO_INCREMENT` | PK |
-| `alias_type` | `VARCHAR(50) NOT NULL` | Field kind — one of `email`, `display_name`, `platform_id`, `employee_id` (extensible) |
-| `insight_source_type` | `VARCHAR(100) NOT NULL` | Source system: `bamboohr`, `zoom`, `cursor`, `claude_admin`, `gitlab`, etc. |
-| `insight_source_id` | `CHAR(36) NOT NULL` | Connector instance UUID (temporary: sipHash128 from Bronze string `source_id` until `sources` table exists — see REC-IR-04) |
-| `insight_tenant_id` | `CHAR(36) NOT NULL` | Tenant UUID (temporary: sipHash128 from Bronze string `tenant_id` until `tenants` table exists — see REC-IR-04) |
-| `alias_value` | `TEXT NOT NULL` | Field value — email address, display name, platform ID, etc. |
-| `person_id` | `CHAR(36) NOT NULL` | Person UUID — groups all field observations that belong to one person |
-| `author_person_id` | `CHAR(36) NOT NULL` | Person UUID of who/what made this change (for initial seed: equals `person_id` — the record is self-authored by the synthetic person) |
+| `alias_type` | `VARCHAR(50) CHARACTER SET ascii NOT NULL` | Field kind — one of `email`, `display_name`, `platform_id`, `employee_id` (extensible) |
+| `insight_source_type` | `VARCHAR(100) CHARACTER SET ascii NOT NULL` | Source system: `bamboohr`, `zoom`, `cursor`, `claude_admin`, `gitlab`, etc. |
+| `insight_source_id` | `CHAR(36) CHARACTER SET ascii NOT NULL` | Connector instance UUID (temporary: sipHash128 from Bronze string `source_id` until `sources` table exists — see REC-IR-04) |
+| `insight_tenant_id` | `CHAR(36) CHARACTER SET ascii NOT NULL` | Tenant UUID (temporary: sipHash128 from Bronze string `tenant_id` until `tenants` table exists — see REC-IR-04) |
+| `alias_value` | `VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL` | Field value — email address, display name, platform ID, etc. `utf8mb4_bin` ensures case/diacritic-sensitive uniqueness at the UNIQUE key level |
+| `person_id` | `CHAR(36) CHARACTER SET ascii NOT NULL` | Person UUID — groups all field observations that belong to one person |
+| `author_person_id` | `CHAR(36) CHARACTER SET ascii NOT NULL` | Person UUID of who/what made this change (for initial seed: equals `person_id` — the record is self-authored by the synthetic person) |
 | `reason` | `TEXT NOT NULL DEFAULT ''` | Optional change-reason comment (empty for initial seed) |
 | `created_at` | `DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)` | When this record was inserted |
 
@@ -752,7 +760,8 @@ Field-level identity attribute history for persons, stored in MariaDB. Each row 
 **Indexes**:
 - `idx_person_id (person_id)` — lookup all fields for a person
 - `idx_tenant_person (insight_tenant_id, person_id)` — tenant-scoped person lookup
-- `idx_alias_lookup (insight_tenant_id, alias_type, alias_value(255))` — reverse lookup: find person(s) by email / display name / platform id
+- `idx_alias_lookup (insight_tenant_id, alias_type, alias_value)` — reverse lookup: find person(s) by email / display name / platform id. With ASCII tenant/alias_type and `VARCHAR(512)` `alias_value`, the full column fits under InnoDB's index byte budget without a prefix length
+- `uq_person_observation (insight_tenant_id, person_id, insight_source_type, insight_source_id, alias_type, alias_value)` UNIQUE — enforces the natural observation key; combined with `INSERT IGNORE` in the seed, guarantees idempotent re-runs
 - `idx_source (insight_source_type, insight_source_id)` — filter by source system + instance
 
 ##### Semantics — SCD-style append-only log
