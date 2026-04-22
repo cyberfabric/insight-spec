@@ -10,5 +10,5 @@
 {{ fields_history(
     snapshot_ref=ref('cursor__members_snapshot'),
     entity_id_col='id',
-    fields=['name', 'role', 'isRemoved']
+    fields=['name', 'email', 'role', 'isRemoved']
 ) }}

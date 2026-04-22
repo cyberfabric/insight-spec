@@ -6,6 +6,9 @@
 
 -- depends_on: {{ ref('bamboohr__identity_input') }}
 -- depends_on: {{ ref('zoom__identity_input') }}
+-- depends_on: {{ ref('slack__identity_input') }}
+-- depends_on: {{ ref('jira__identity_input') }}
+-- depends_on: {{ ref('cursor__identity_input') }}
 
 {{ config(
     materialized='incremental',
