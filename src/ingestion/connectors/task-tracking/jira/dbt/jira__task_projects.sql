@@ -20,7 +20,9 @@ SELECT
     CAST(NULL AS Nullable(String))              AS lead_id,
     p.project_type                              AS project_type,
     p.style                                     AS project_style,
-    toUInt8OrNull(toString(p.archived))         AS archived,
+    -- `p.archived` is `Nullable(Bool)` in bronze. `toString(true) = 'true'`, which
+    -- `toUInt8OrNull` cannot parse — the old expression silently produced 100% NULL.
+    CAST(p.archived AS Nullable(UInt8))         AS archived,
     now64(3)                                    AS collected_at,
     toUnixTimestamp64Milli(now64(3))            AS _version
 FROM {{ source('bronze_jira', 'jira_projects') }} p

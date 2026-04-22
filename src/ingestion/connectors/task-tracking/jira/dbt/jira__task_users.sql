@@ -24,7 +24,9 @@ SELECT
     u.display_name                              AS display_name,
     CAST(NULL AS Nullable(String))              AS username,
     u.account_type                              AS account_type,
-    toUInt8OrNull(toString(u.active))           AS is_active,
+    -- Same reason as `archived` in jira__task_projects: `u.active` is `Nullable(Bool)`;
+    -- `toUInt8OrNull(toString(...))` was silently producing 100% NULL.
+    CAST(u.active AS Nullable(UInt8))           AS is_active,
     toDateTime64(u._airbyte_extracted_at, 3)    AS collected_at,
     toUnixTimestamp64Milli(u._airbyte_extracted_at) AS _version
 FROM {{ source('bronze_jira', 'jira_user') }} u
