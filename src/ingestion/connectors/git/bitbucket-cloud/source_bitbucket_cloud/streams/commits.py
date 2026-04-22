@@ -9,16 +9,20 @@ Three load-bearing optimizations (paired, not independent):
 2. **Force-push detection**: when stored head_sha != current HEAD, reset that
    branch's cursor to ``start_date`` and re-fetch. Catches rebases that
    preserve author_date (cursor alone would silently miss rewritten commits).
-3. **SQLite-backed cross-branch dedup + pagination-stop**: once a feature
-   branch re-enters main's shared history, skip re-emitting the shared
-   commit AND stop paginating (those older commits will be reached via
-   main's iteration anyway). Dedup set is kept per-repo in a /tmp sqlite
-   so memory stays bounded by the page cache (~8 MB) regardless of commit
-   count, and there is no probabilistic data-loss. Destination bronze is
-   append-mode and does not dedupe, so without this skip, shared history
-   between main and N feature branches would bloat bronze N× (measured:
-   4× on typical repos, up to 76× on repos with many release-tag-pointing
-   branches).
+3. **SQLite-backed cross-branch pagination-stop**: once a feature branch
+   re-enters main's shared history, stop paginating that branch — older
+   commits will be fetched via main's iteration anyway. This is a
+   per-run work-reduction mechanism, not a durable dedup: without it,
+   every sync walks every feature branch from HEAD to start_date and
+   re-fetches main's history N× (measured 4× typical, 76× on repos
+   with many release-tag-pointing branches). Dedup table is kept per-
+   repo in a /tmp sqlite so memory stays bounded by the page cache
+   (~8 MB) regardless of commit count.
+
+   If the pod crashes the /tmp sqlite is lost, so the next run pays the
+   full walk again for that repo — same cost as running without this
+   optimization. Silver dedupes by unique_key, so bronze row counts
+   from a crashed-then-resumed run are not a correctness concern.
 
 Default branch is iterated first within each repo so main's history fills
 the dedup set before feature branches iterate.
@@ -177,16 +181,39 @@ class CommitsStream(HttpSubStream, BitbucketCloudStream):
         buffer: List[Mapping[str, Any]] = []
         current_repo: Optional[tuple] = None
 
-        for parent_slice in super().stream_slices(
-            sync_mode=sync_mode, cursor_field=cursor_field, stream_state=stream_state,
+        # Drive branches via stream_slices + read_records with empty state —
+        # matches every other sub-stream in this module. HttpSubStream's
+        # default path (super().stream_slices → parent.read_only_records)
+        # calls Stream.read(), which in CDK 7.x overrides the incoming
+        # stream_state with self.state. Because branches runs before commits
+        # in source.streams(), branches.state has already been populated
+        # with per-branch head_sha entries by the time commits iterates;
+        # under the default path, branches.parse_response would skip-emit
+        # every branch whose HEAD hasn't changed and commits would never
+        # receive the slice — even branches whose history commits didn't
+        # finish on a prior run. Passing stream_state={} forces branches
+        # to emit all branches so this stream's own HEAD-unchanged guard
+        # and force-push detection apply against commits' own state.
+        for branch_slice in self.parent.stream_slices(
+            sync_mode=SyncMode.full_refresh, cursor_field=None, stream_state={},
         ):
-            branch = parent_slice["parent"]
-            repo_key = (branch["workspace"], branch["repo_slug"])
-            if current_repo is not None and repo_key != current_repo:
-                yield from self._emit_repo(buffer, state)
-                buffer = []
-            current_repo = repo_key
-            buffer.append(parent_slice)
+            for branch_record in self.parent.read_records(
+                sync_mode=SyncMode.full_refresh,
+                stream_slice=branch_slice,
+                stream_state={},
+            ):
+                if not isinstance(branch_record, Mapping):
+                    continue
+                workspace = branch_record.get("workspace")
+                slug = branch_record.get("repo_slug")
+                if not workspace or not slug:
+                    continue
+                repo_key = (workspace, slug)
+                if current_repo is not None and repo_key != current_repo:
+                    yield from self._emit_repo(buffer, state)
+                    buffer = []
+                current_repo = repo_key
+                buffer.append({"parent": branch_record})
 
         if buffer:
             yield from self._emit_repo(buffer, state)
@@ -213,11 +240,10 @@ class CommitsStream(HttpSubStream, BitbucketCloudStream):
             current_head = branch.get("target_hash", "") or ""
             current_head_date = branch.get("target_date", "") or ""
 
-            # HEAD-unchanged skip — branch is fully synced iff stored HEAD
-            # matches the live HEAD AND stored cursor has reached HEAD's
-            # commit date. Slice-atomic state (state_checkpoint_interval=None)
-            # guarantees stored_cursor only reflects a fully-completed
-            # pagination, so this guard is sound.
+            # HEAD-unchanged skip — branch fully synced iff stored HEAD
+            # matches live HEAD AND stored cursor reached HEAD's commit
+            # date. Slice-atomic state guarantees stored_cursor reflects a
+            # fully-completed pagination.
             if (
                 stored_head
                 and current_head
@@ -229,26 +255,25 @@ class CommitsStream(HttpSubStream, BitbucketCloudStream):
                 skipped_unchanged += 1
                 continue
 
-            # Force-push detection — HEAD moved AND new HEAD's commit_date is
-            # not newer than the stored cursor, which means normal pagination
-            # from HEAD down to cursor won't reach the rewritten commits
-            # (rebase preserved author_date). Reset cursor to re-fetch.
-            # Normal push case: new HEAD's commit_date > stored_cursor →
-            # pagination naturally walks from HEAD down to cursor, picking
-            # up the new commits — no reset needed.
+            # Force-push / ancestry-uncertain reset: any HEAD change means
+            # we can't assume the stored cursor is on the new HEAD's
+            # ancestry. Rebase can produce a newer top commit (passing a
+            # date-only check) while rewriting older commits that normal
+            # newest-first pagination would miss via cursor early-exit.
+            # Resetting the cursor re-walks the branch; same-run cross-
+            # branch dedup prevents bronze duplication from re-emitted
+            # shared history. Next run's stored_cursor is back to max.
             if (
                 stored_head
                 and current_head
                 and current_head != stored_head
-                and current_head_date
                 and stored_cursor
-                and current_head_date <= stored_cursor
             ):
                 logger.info(
-                    f"Force-push detected on {partition_key} "
+                    f"HEAD changed on {partition_key} "
                     f"({stored_head[:8]}->{current_head[:8]}, "
-                    f"head_date={current_head_date} ≤ cursor={stored_cursor}): "
-                    f"resetting cursor"
+                    f"head_date={current_head_date} cursor={stored_cursor}): "
+                    f"resetting cursor to re-walk ancestry"
                 )
                 stored_cursor = ""
 

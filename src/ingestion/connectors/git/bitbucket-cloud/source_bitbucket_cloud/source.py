@@ -36,6 +36,11 @@ class SourceBitbucketCloud(AbstractSource):
         token = config["bitbucket_token"]
         username = config.get("bitbucket_username", "")
         workspaces = config.get("bitbucket_workspaces", [])
+        if not workspaces:
+            return False, (
+                "bitbucket_workspaces is empty — configure at least one "
+                "workspace slug"
+            )
         headers = auth_headers(token, username)
 
         logger.info(
