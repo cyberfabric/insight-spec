@@ -207,7 +207,7 @@ pub async fn fetch_all_snapshots(
                     COALESCE(toString(id_readable), '')     AS id_readable, \
                     COALESCE(toInt64(toUnixTimestamp64Milli(parseDateTime64BestEffortOrNull(created, 3))), 0) AS created_ms, \
                     reporter_id \
-             FROM bronze_jira.jira_issue FINAL AS ji \
+             FROM bronze_jira.jira_issue FINAL ji \
              WHERE source_id = ?",
         )
         .bind(insight_source_id)
