@@ -9,8 +9,9 @@
 ) }}
 
 -- Materialized as `table` (not `incremental`) so every dbt run rewrites staging from scratch.
--- Rationale: bronze already dedups via ReplacingMergeTree; incremental `append` here would
--- accumulate identical rows across runs (3 runs = 3x the storage) without added value.
+-- Rationale: the final GROUP BY collapses duplicates at the content-identity level, so
+-- bronze append duplicates (same changelog re-emitted across Airbyte runs) produce one
+-- staging row regardless.
 
 -- Explode `bronze_jira.jira_issue_history.items` JSON array into one row per field change.
 -- Consumed by `jira-enrich` Rust binary (reads from staging.jira_changelog_items).
@@ -20,6 +21,9 @@
 --     "to": "...", "toString": "..." }
 --
 -- ClickHouse strategy: arrayJoin() on JSONExtractArrayRaw, then JSONExtract* on each element.
+-- Bronze dedup is handled by argMax on the natural key (source_id, changelog_id) picking the
+-- latest Airbyte emission, then the final GROUP BY below collapses content-identical items
+-- within a single changelog.
 
 WITH exploded AS (
     SELECT
@@ -33,7 +37,7 @@ WITH exploded AS (
     FROM (
         SELECT * FROM {{ source('bronze_jira', 'jira_issue_history') }}
         ORDER BY _airbyte_extracted_at DESC
-        LIMIT 1 BY _airbyte_raw_id
+        LIMIT 1 BY source_id, changelog_id
     ) h
     WHERE h.items IS NOT NULL AND h.items != '[]'
 ),

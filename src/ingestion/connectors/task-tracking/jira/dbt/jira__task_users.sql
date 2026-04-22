@@ -11,6 +11,10 @@
 
 -- Per-source staging model; unioned into `silver.class_task_users` via `union_by_tag`.
 -- Anchor for identity resolution.
+--
+-- `_version` is `_airbyte_extracted_at` — deterministic and monotonic. Using `now64(3)`
+-- here would make replacement order within a single run indeterminate (rows get
+-- slightly different timestamps).
 
 SELECT
     u.source_id                                 AS insight_source_id,
@@ -21,7 +25,7 @@ SELECT
     CAST(NULL AS Nullable(String))              AS username,
     u.account_type                              AS account_type,
     toUInt8OrNull(toString(u.active))           AS is_active,
-    now64(3)                                    AS collected_at,
-    toUnixTimestamp64Milli(now64(3))            AS _version
+    toDateTime64(u._airbyte_extracted_at, 3)    AS collected_at,
+    toUnixTimestamp64Milli(u._airbyte_extracted_at) AS _version
 FROM {{ source('bronze_jira', 'jira_user') }} u
 -- `jira_user` bronze = MergeTree (full_refresh + overwrite), FINAL not supported and not needed.

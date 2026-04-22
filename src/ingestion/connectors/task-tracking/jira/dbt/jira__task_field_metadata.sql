@@ -4,7 +4,7 @@
     incremental_strategy='append',
     schema='staging',
     engine='ReplacingMergeTree(_version)',
-    order_by='(insight_source_id, data_source, field_id, project_key, observed_at)',
+    order_by='(insight_source_id, data_source, field_id, project_key)',
     settings={'allow_nullable_key': 1},
     tags=['jira', 'silver:class_task_field_metadata']
 ) }}
@@ -14,6 +14,11 @@
 -- Bronze `jira_fields` stores schema as three flat columns: schema_type, schema_items, schema_custom.
 --   is_multi  = (schema_type == 'array')
 --   has_id    = multi+items!='string' OR single+items is present (structured field)
+--
+-- `_version` is `_airbyte_extracted_at` — deterministic and monotonic per Airbyte emission.
+-- `observed_at` stays as an informational column but is NOT part of the ORDER BY, so
+-- re-observing the same field across runs collapses to one row after ReplacingMergeTree
+-- merge (keeping the newest).
 
 SELECT
     COALESCE(f.source_id, '')                     AS insight_source_id,
@@ -31,7 +36,7 @@ SELECT
             ELSE 1
         END
     )                                               AS has_id,
-    now64(3)                                      AS observed_at,
-    toUnixTimestamp64Milli(now64(3))              AS _version
+    toDateTime64(f._airbyte_extracted_at, 3)      AS observed_at,
+    toUnixTimestamp64Milli(f._airbyte_extracted_at) AS _version
 FROM {{ source('bronze_jira', 'jira_fields') }} f
 -- `jira_fields` bronze = MergeTree (full_refresh + overwrite), FINAL not supported.

@@ -37,13 +37,14 @@ WITH issue AS (
         JSONExtractString(custom_fields_json, 'reporter', 'displayName') AS reporter_name,
         parent_id,
         project_key,
-        JSONExtractString(custom_fields_json, 'labels')              AS labels_raw,
-        CAST(NULL AS Nullable(String))                                AS story_points,
+        -- Labels is a JSON array; `JSONExtractString` at an array path returns '',
+        -- so take the raw JSON and let the UNION branch parse it as Array(String).
+        JSONExtractRaw(custom_fields_json, 'labels')                 AS labels_raw,
         due_date
     FROM (
         SELECT * FROM {{ source('bronze_jira', 'jira_issue') }}
         ORDER BY _airbyte_extracted_at DESC
-        LIMIT 1 BY _airbyte_raw_id
+        LIMIT 1 BY source_id, jira_id
     ) AS ji
 )
 
@@ -124,21 +125,16 @@ FROM (
 
     UNION ALL
 
-    -- labels
+    -- labels. `labels_raw` is the raw JSON array from custom_fields_json.
     SELECT i.insight_source_id, i.issue_id, i.id_readable, i.created_at,
            'labels',
-           JSONExtract(COALESCE(i.labels_raw, '[]'), 'Array(String)'),
-           JSONExtract(COALESCE(i.labels_raw, '[]'), 'Array(String)')
+           JSONExtract(COALESCE(nullIf(i.labels_raw, ''), '[]'), 'Array(String)'),
+           JSONExtract(COALESCE(nullIf(i.labels_raw, ''), '[]'), 'Array(String)')
     FROM issue i
 
-    UNION ALL
-
-    -- story_points
-    SELECT i.insight_source_id, i.issue_id, i.id_readable, i.created_at,
-           'story_points',
-           if(i.story_points IS NULL OR i.story_points = '', [], [i.story_points]),
-           if(i.story_points IS NULL OR i.story_points = '', [], [i.story_points])
-    FROM issue i
+    -- NOTE: `story_points` is deliberately omitted here — Jira stores it in an
+    -- instance-specific `customfield_NNNNN` column whose ID must be resolved per
+    -- tenant. Tracked as a gap in `docs/components/connectors/task-tracking/specs/task-metrics-map.md`.
 
     UNION ALL
 
