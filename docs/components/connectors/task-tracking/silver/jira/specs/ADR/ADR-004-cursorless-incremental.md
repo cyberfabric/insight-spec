@@ -31,13 +31,13 @@ Enrich must process only new Bronze events on each run. A naive approach is to k
 
 ## Decision Outcome
 
-Chosen option: **Cursorless**, using per-issue `max(event_at)` as the high-water-mark. On each run:
+Chosen option: **Cursorless**, using a per-issue **ordered** high-water mark — the tuple `(event_at, _seq, event_id)` — as the boundary. A single timestamp is not enough: same-millisecond changelog entries would be silently skipped, since we explicitly rely on `_seq` to break ties. On each run:
 
-1. Read per-issue HWM with `SELECT id_readable, max(event_at) FROM field_history WHERE data_source='jira' AND insight_source_id=? GROUP BY id_readable`.
-2. Filter Bronze events with `LEFT JOIN` against HWM; keep rows where HWM is NULL (new issue) or `created_at > HWM`.
-3. Process per issue; emit rows; let `ReplacingMergeTree(_version)` handle any duplicates.
+1. Read per-issue HWM with the max processed ordering tuple from `field_history` (the three columns in the same order as above).
+2. Filter Bronze events with a `LEFT JOIN` against that HWM; keep rows where HWM is NULL (new issue) or the event ordering tuple is strictly greater than HWM. When only timestamp filtering is available (the current Rust implementation uses `created_at > HWM_timestamp`), we intentionally overlap on equality and rely on deterministic `event_id` plus `ReplacingMergeTree(_version)` for dedupe.
+3. Process per issue; emit rows; let `ReplacingMergeTree(_version)` collapse any duplicates at merge time.
 
-Self-heal is **not** implemented. Events that arrive with `event_at < per-issue HWM` are silently dropped. Operators who need to recover such events run a manual full reprocess: `DELETE` rows for affected issues + re-run enrich.
+Self-heal is **not** implemented. Events that arrive strictly before the per-issue HWM are silently dropped. Operators who need to recover such events run a manual full reprocess: `DELETE` rows for affected issues + re-run enrich.
 
 ### Consequences
 
