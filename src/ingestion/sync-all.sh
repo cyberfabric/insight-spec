@@ -71,7 +71,8 @@ for i in "${!CONNECTION_IDS[@]}"; do
   cid="${CONNECTION_IDS[$i]}"
   label="${CONNECTION_LABELS[$i]}"
   echo -n "  ${label} (${cid})... "
-  if result=$(curl -sf -X POST "${AIRBYTE_API}/api/v1/connections/sync" \
+  if result=$(curl -sf --connect-timeout 10 --max-time 60 \
+      -X POST "${AIRBYTE_API}/api/v1/connections/sync" \
       -H "Authorization: Bearer ${AIRBYTE_TOKEN}" \
       -H "Content-Type: application/json" \
       -d "{\"connectionId\":\"${cid}\"}" 2>&1); then
@@ -87,3 +88,8 @@ echo ""
 echo "=== Done: $((${#CONNECTION_IDS[@]} - FAILED)) started, ${FAILED} failed ==="
 echo "  Monitor: http://localhost:8001 (Airbyte UI)"
 echo "  Monitor: http://localhost:30500 (Argo UI)"
+
+# Propagate partial failure so CI / orchestration treats a mixed result
+# as failure, not success.
+[[ $FAILED -gt 0 ]] && exit 1
+exit 0

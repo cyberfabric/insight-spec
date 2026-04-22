@@ -227,20 +227,20 @@ data:
 EOF
   unset -f _b64
 
-  if ! helm status insight-mariadb -n "$NAMESPACE" &>/dev/null; then
-    echo "=== Deploying MariaDB ==="
-    helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
-    helm repo update bitnami >/dev/null
-    helm upgrade --install insight-mariadb bitnami/mariadb \
-      --namespace "$NAMESPACE" --version "~20" \
-      -f helmfile/values/mariadb.yaml \
-      --set auth.existingSecret="$MARIADB_SECRET_NAME" \
-      --set auth.database="$MARIADB_DATABASE" \
-      --set auth.username="$MARIADB_USER" \
-      --wait --timeout 5m
-  else
-    echo "=== MariaDB already deployed ==="
-  fi
+  # `helm upgrade --install` is idempotent on its own -- always run it so
+  # chart / values / parameter changes reconcile even when the release
+  # already exists. Wrapping it in `if ! helm status` would silently
+  # skip reconciliation on re-runs.
+  echo "=== Deploying / updating MariaDB ==="
+  helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
+  helm repo update bitnami >/dev/null
+  helm upgrade --install insight-mariadb bitnami/mariadb \
+    --namespace "$NAMESPACE" --version "~20" \
+    -f helmfile/values/mariadb.yaml \
+    --set auth.existingSecret="$MARIADB_SECRET_NAME" \
+    --set auth.database="$MARIADB_DATABASE" \
+    --set auth.username="$MARIADB_USER" \
+    --wait --timeout 5m
 
   # Apply MariaDB schema migrations BEFORE backend services start.
   # Analytics-api / identity-resolution read persons and future

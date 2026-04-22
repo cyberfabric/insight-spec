@@ -232,23 +232,16 @@ The system **MUST** maintain a `persons` table in MariaDB that stores the histor
 
 - [ ] `p1` - **ID**: `cpt-ir-fr-persons-initial-seed`
 
-The system **MUST** provide a re-runnable seed script that populates the `persons` table from the ClickHouse `identity.identity_inputs` view. The script **MUST**:
+The system **MUST** provide a re-runnable bootstrap mechanism that populates `persons` from `identity_inputs` with the following behavioural guarantees:
 
-1. Read all UPSERT observations from `identity_inputs` with non-empty `alias_value`.
-2. Group observations by `(insight_tenant_id, insight_source_type, insight_source_id, source_account_id)` — one "source account" per connector-instance-user.
-3. Use the **email** observation per source-account as the sole identity key. Source-accounts without an email **MUST** be skipped (no `person_id` assigned, their other observations not written).
-4. Within a tenant, normalise emails (`lower(trim())`). Each unique normalised email **MUST** receive exactly one deterministic `person_id`, computed as `uuid5(PERSON_NAMESPACE, f"{insight_tenant_id}:{normalized_email}")` with a fixed project namespace. The same `(tenant, email)` pair **MUST** always produce the same `person_id` across runs, so the same person is shared across all source-accounts with the same email and across repeated seed executions.
-5. For each source-account assigned to a `person_id`, write one row per observation (`email`, `display_name`, `platform_id`, `employee_id`, …) into `persons` with `author_person_id = person_id` (self-authored) and `reason = ''`.
-6. Write via `INSERT IGNORE` so existing observations matching the `uq_person_observation` UNIQUE KEY `(insight_tenant_id, person_id, insight_source_type, insight_source_id, alias_type, alias_value)` are silently skipped. Re-running on identical input **MUST** add zero rows; re-running after a new connector sync **MUST** add only genuinely new observations without losing or duplicating prior rows.
-7. **MUST NOT** issue `TRUNCATE`, `DELETE`, or any other destructive statement against `persons`. Wiping the table is an explicit operator action outside the script.
+- **Email as identity anchor**: each source-account's email observation uniquely identifies a person within a tenant; source-accounts without an email **MUST** be skipped.
+- **Deterministic identity assignment**: the same `(tenant, normalised email)` pair **MUST** always resolve to the same `person_id` across runs, so the same person is shared across every source-account that uses the same email and across repeated executions.
+- **Idempotent re-run**: running the bootstrap on identical input **MUST NOT** add any rows; running after a new connector sync **MUST** add only the newly observed rows without losing or duplicating prior ones.
+- **Non-destructive**: the bootstrap **MUST NOT** delete, truncate, or otherwise remove rows from `persons`. Re-seeding from scratch is an explicit operator action outside the bootstrap.
 
-**Rationale**: Bootstraps the persons table with all persons that have an email anchor across configured connectors. Email is the single authoritative cross-source identity key in Phase 1 (matching rules come in Phase 3). Deterministic `person_id` (UUIDv5) combined with `INSERT IGNORE` on the observation UNIQUE KEY provides a true upsert — the script is safe to re-run after every connector sync without duplicating data or wiping operator-authored rows. See ADR-0002 for the full decision record.
+**Rationale**: Bootstraps the `persons` table with every person who has an email anchor across configured connectors. Email is the single authoritative cross-source identity key in Phase 1 (matching rules come in Phase 3). The deterministic-identity + idempotent-re-run guarantees together mean the bootstrap is safe to execute after every connector sync without duplicating data or wiping operator-authored rows.
 
-**Scripts** (two-file split by concern):
-- `src/ingestion/scripts/seed-persons.sh` — environment orchestrator: resolves K8s secrets, starts MariaDB port-forward if needed, then invokes the Python script. Does **not** apply DDL — the `persons` table is created by the MariaDB migration runner (see ingestion DESIGN §4.4 and ADR-0004).
-- `src/ingestion/scripts/seed-persons-from-identity-input.py` — pure data transform: reads `identity.identity_inputs` from ClickHouse, computes deterministic `person_id`s, writes all observations into MariaDB via `INSERT IGNORE`. Independently runnable when env vars are set and the DDL is already applied.
-
-See DESIGN §Initial seed for the full contract.
+Schema of `persons`, UNIQUE-key structure, deterministic key derivation, and script layout are specified in the identity-resolution DESIGN §3.7 "Table: `persons`" and in [ADR-0002](ADR/0002-deterministic-person-id-for-seed.md).
 
 **Actors**: `cpt-ir-actor-analytics-pipeline`
 

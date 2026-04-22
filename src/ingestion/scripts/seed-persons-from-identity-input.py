@@ -48,6 +48,9 @@ MAX_ALIAS_VALUE_LEN = 512
 CH_URL = os.environ.get("CLICKHOUSE_URL", "http://localhost:30123")
 CH_USER = os.environ.get("CLICKHOUSE_USER", "default")
 CH_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
+# Hard cap on the ClickHouse HTTP query. A stalled endpoint otherwise
+# hangs the whole one-shot seed indefinitely.
+CH_TIMEOUT_SEC = int(os.environ.get("CLICKHOUSE_TIMEOUT_SEC", "60"))
 
 # Guard urllib against file:// and other non-HTTP schemes -- CH_URL is read
 # from env and fed to urlopen; a mistaken value should error, not open a
@@ -65,7 +68,7 @@ def ch_query(sql: str) -> list[dict]:
     req = urllib.request.Request(url)
     creds = base64.b64encode(f"{CH_USER}:{CH_PASSWORD}".encode()).decode()
     req.add_header("Authorization", f"Basic {creds}")
-    with urllib.request.urlopen(req) as resp:  # noqa: S310 -- scheme validated above
+    with urllib.request.urlopen(req, timeout=CH_TIMEOUT_SEC) as resp:  # noqa: S310 -- scheme validated above
         lines = resp.read().decode().strip().split("\n")
         return [json.loads(line) for line in lines if line.strip()]
 
@@ -77,30 +80,29 @@ def get_mariadb_conn():
         "MARIADB_URL", "mysql://insight:insight-pass@localhost:3306/analytics"
     )
     # Parse mysql://user:pass@host:port/db
-    from urllib.parse import urlparse
+    # seed-persons.sh URL-encodes user/password via urllib.parse.quote() so
+    # that passwords containing ':', '@', '/', or '%' do not break URL
+    # parsing. urlparse returns the values still-encoded -- we unquote
+    # here before handing them to the driver.
+    from urllib.parse import urlparse, unquote
     parsed = urlparse(mariadb_url)
+    user = unquote(parsed.username) if parsed.username else "insight"
+    password = unquote(parsed.password) if parsed.password else ""
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 3306
+    database = parsed.path.lstrip("/") or "analytics"
 
     try:
         import pymysql
         return pymysql.connect(
-            host=parsed.hostname or "localhost",
-            port=parsed.port or 3306,
-            user=parsed.username or "insight",
-            password=parsed.password or "",
-            database=parsed.path.lstrip("/") or "analytics",
-            charset="utf8mb4",
-            autocommit=False,
+            host=host, port=port, user=user, password=password,
+            database=database, charset="utf8mb4", autocommit=False,
         )
     except ImportError:
         import mysql.connector
         return mysql.connector.connect(
-            host=parsed.hostname or "localhost",
-            port=parsed.port or 3306,
-            user=parsed.username or "insight",
-            password=parsed.password or "",
-            database=parsed.path.lstrip("/") or "analytics",
-            charset="utf8mb4",
-            autocommit=False,
+            host=host, port=port, user=user, password=password,
+            database=database, charset="utf8mb4", autocommit=False,
         )
 
 
