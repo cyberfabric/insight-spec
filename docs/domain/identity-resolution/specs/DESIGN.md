@@ -710,7 +710,7 @@ Canonical union of all identity observations from connectors. Replaces the legac
 
 **Source models** (tagged `identity:input`):
 - `bamboohr__identity_input`, `zoom__identity_input` — via `identity_input_from_history` macro
-- `seed_identity_input_from_cursor`, `seed_identity_input_from_claude_team` — direct Bronze seeds
+- `seed_identity_input_from_cursor`, `seed_identity_input_from_claude_admin` — direct Bronze seeds
 
 Column schema is identical to the `identity_inputs` (ex-`bootstrap_inputs`) table definition above.
 
@@ -738,7 +738,7 @@ Field-level identity attribute history for persons, stored in MariaDB. Each row 
 |---|---|---|
 | `id` | `BIGINT UNSIGNED AUTO_INCREMENT` | PK |
 | `alias_type` | `VARCHAR(50) NOT NULL` | Field kind — one of `email`, `display_name`, `platform_id`, `employee_id` (extensible) |
-| `insight_source_type` | `VARCHAR(100) NOT NULL` | Source system: `bamboohr`, `zoom`, `cursor`, `claude_team`, `gitlab`, etc. |
+| `insight_source_type` | `VARCHAR(100) NOT NULL` | Source system: `bamboohr`, `zoom`, `cursor`, `claude_admin`, `gitlab`, etc. |
 | `insight_source_id` | `CHAR(36) NOT NULL` | Connector instance UUID (temporary: sipHash128 from Bronze string `source_id` until `sources` table exists — see REC-IR-04) |
 | `insight_tenant_id` | `CHAR(36) NOT NULL` | Tenant UUID (temporary: sipHash128 from Bronze string `tenant_id` until `tenants` table exists — see REC-IR-04) |
 | `alias_value` | `TEXT NOT NULL` | Field value — email address, display name, platform ID, etc. |

@@ -116,11 +116,7 @@ LEFT ANTI JOIN identity.aliases existing
 
 
 -- ============================================================
-<<<<<<< HEAD:src/ingestion/scripts/adhoc/seed_from_claude_admin_manual.sql
--- Step 3: Add bootstrap_inputs from Claude Admin (raw observations)
-=======
--- Step 3: Add identity_inputs from Claude Team (raw observations)
->>>>>>> refactor(identity): rename bootstrap_inputs → identity_inputs per PR 182:src/ingestion/scripts/adhoc/seed_from_claude_team_manual.sql
+-- Step 3: Add identity_inputs from Claude Admin (raw observations)
 -- ============================================================
 
 INSERT INTO identity.identity_inputs (

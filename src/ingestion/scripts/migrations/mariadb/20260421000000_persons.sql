@@ -15,7 +15,7 @@
 CREATE TABLE IF NOT EXISTS persons (
     id                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     alias_type          VARCHAR(50)   NOT NULL COMMENT 'Field kind: email, display_name, platform_id, employee_id, etc.',
-    insight_source_type VARCHAR(100)  NOT NULL COMMENT 'Source system: bamboohr, zoom, cursor, claude_team, etc.',
+    insight_source_type VARCHAR(100)  NOT NULL COMMENT 'Source system: bamboohr, zoom, cursor, claude_admin, etc.',
     insight_source_id   CHAR(36)      NOT NULL COMMENT 'Connector instance UUID (sipHash from bronze source_id)',
     insight_tenant_id   CHAR(36)      NOT NULL COMMENT 'Tenant UUID (sipHash from bronze tenant_id)',
     alias_value         VARCHAR(512)  NOT NULL COMMENT 'Field value (email address, display name, platform ID, etc.)',
