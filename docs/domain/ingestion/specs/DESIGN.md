@@ -27,6 +27,7 @@ date: 2026-03-23
   - [4.1 Production (Kubernetes + Helm)](#41-production-kubernetes--helm)
   - [4.2 Local Development (Kind K8s Cluster)](#42-local-development-kind-k8s-cluster)
   - [4.3 Ultra-Light Connector Debugging](#43-ultra-light-connector-debugging)
+  - [4.4 Schema Migrations](#44-schema-migrations)
 - [5. Additional Context](#5-additional-context)
   - [5.1 Superseded Components](#51-superseded-components)
 - [6. Open Questions](#6-open-questions)
@@ -732,7 +733,8 @@ KUBECONFIG: `~/.kube/insight.kubeconfig`
 | `./up.sh` | Full stack: creates Kind cluster, deploys all services (ingestion + MariaDB + backend + frontend). Uses `.env.local` for configuration. Idempotent — safe to re-run. |
 | `./restart.sh` | Quick restart after WSL/Docker crash: restarts existing Kind cluster and scales pods back to 1. Falls back to full `./up.sh` + `./init.sh` if cluster is gone. Cleans up stale containers and stuck Helm releases. |
 | `./down.sh` | Graceful stop: scales all pods to 0, stops Kind container. Data preserved — `./restart.sh` brings everything back. |
-| `./init.sh` | Post-startup init: applies secrets, runs ClickHouse migrations, registers connectors, creates Airbyte connections. |
+| `./init.sh` | Post-startup init: applies secrets, runs ClickHouse migrations, runs MariaDB migrations (via `run-migrations-mariadb.sh`), registers connectors, creates Airbyte connections. |
+| `./scripts/run-migrations-mariadb.sh` | MariaDB migration runner. Tracks applied migrations in `schema_migrations`, applies pending `*.sql` / `*.sh` files from `scripts/migrations/mariadb/`. See §4.4 and ADR-0004. |
 | `src/ingestion/sync-all.sh` | Trigger Airbyte sync for all connections. Reads connection IDs from state, calls Airbyte API. Use after `./init.sh` to start first data load, or anytime to re-sync all sources. |
 
 **First-time setup**:
@@ -761,6 +763,103 @@ For rapid nocode connector iteration without the full Airbyte platform:
 - Mount custom manifest, pipe output to local destination
 
 See [Airbyte Connector DESIGN](../../connector/specs/DESIGN.md) for detailed debugging workflows.
+
+### 4.4 Schema Migrations
+
+The project persists data in two stores with two different migration
+mechanisms. Both are file-based, both are invoked from `init.sh`, but
+they diverge on bookkeeping because of different evolution patterns.
+
+#### 4.4.1 ClickHouse migrations
+
+- **Location**: `src/ingestion/scripts/migrations/*.sql`
+- **Naming**: `YYYYMMDDHHMMSS_<description>.sql` — timestamp prefix
+  enforces chronological order under lexicographic glob
+- **Runner**: inline loop in `init.sh`, applied via
+  `kubectl exec -i deploy/clickhouse -- clickhouse-client --multiquery`
+- **Bookkeeping**: none — every migration is re-run on every `init.sh`
+  invocation and therefore must be written idempotently
+  (`CREATE ... IF NOT EXISTS`, `ALTER ... IF NOT EXISTS`, etc.)
+- **Rationale**: analytics schema is mostly `CREATE TABLE` / `CREATE
+  VIEW` statements where idempotency guards are free, so a
+  `schema_migrations` bookkeeping table is unnecessary
+
+#### 4.4.2 MariaDB migrations
+
+- **Location**: `src/ingestion/scripts/migrations/mariadb/` — single
+  flat directory containing both `*.sql` and `*.sh` files
+- **Naming**: `YYYYMMDDHHMMSS_<description>.{sql|sh}` — same timestamp
+  prefix rule, both kinds mixed in one directory to preserve
+  chronological interleaving of DDL and data migrations
+- **Runner**: `src/ingestion/scripts/run-migrations-mariadb.sh` —
+  stand-alone script, invoked automatically from `init.sh`, also
+  callable directly
+- **SQL execution**: pipes the file's contents through `kubectl -n
+  $MARIADB_NAMESPACE exec -i $MARIADB_POD -c $MARIADB_CONTAINER --
+  mariadb -u … -p… -D $MARIADB_DB --batch`. The MariaDB client lives
+  inside the Bitnami MariaDB pod — no host-side `mariadb`/`mysql`
+  client is required, no port-forward
+- **Bookkeeping**: `schema_migrations` table
+  (`version VARCHAR(255) PRIMARY KEY, applied_at DATETIME(3)`),
+  bootstrapped by the runner itself on first invocation. `version` =
+  filename without extension
+- **Execution rules**:
+  1. Load applied `version`s from `schema_migrations`
+  2. Enumerate `*.sql` + `*.sh` in the directory, sort lexicographically
+  3. For every pending file: `.sql` piped into the in-pod MariaDB
+     client via `kubectl exec -i`; `.sh` executed with `bash`. The
+     runner exports `MARIADB_URL`, `MARIADB_USER`, `MARIADB_PASSWORD`,
+     `MARIADB_HOST`, `MARIADB_PORT`, `MARIADB_DB`, plus
+     `MARIADB_NAMESPACE`, `MARIADB_POD`, `MARIADB_CONTAINER` (so SH
+     migrations can use the same `kubectl exec` path) to child
+     processes
+  4. On success, record the `version` in `schema_migrations`
+  5. On failure — abort immediately, do not record, do not continue
+- **Idempotency in two layers**: the runner skips by `schema_migrations`;
+  migration authors should still write DDL with `IF NOT EXISTS` and
+  data migrations with `INSERT IGNORE` / conditional `UPDATE` so that a
+  manually-dropped `schema_migrations` does not lead to a crash
+- **Rationale**: MariaDB will evolve with `ALTER`s and data backfills
+  where `IF NOT EXISTS` guards are awkward or impossible. A `version`-
+  tracked runner gives "what has been applied" a crisp answer
+
+See [ADR-0004](ADR/0004-mariadb-migration-runner.md) for the full
+decision rationale, alternatives considered, and contract for
+migration authors.
+
+#### 4.4.3 Coexistence with `seaql_migrations`
+
+The `analytics` MariaDB database hosts **two independent migration
+trackers**:
+
+| Tracker | Owner | Manages |
+|---|---|---|
+| `seaql_migrations` | `analytics-api` backend (SeaORM) | backend-owned tables: `metrics`, `thresholds`, `table_columns`, seed rows |
+| `schema_migrations` | ingestion/identity/person/org-chart (our runner) | all non-backend tables: `persons`, future identity-domain tables, etc. |
+
+Both trackers live in the same `analytics` database but never
+reference each other. Version namespaces do not collide:
+`seaql_migrations` uses `m{YYYYMMDD}_{seq}_{name}` (SeaORM default),
+`schema_migrations` uses `{YYYYMMDDHHMMSS}_{name}` (our convention).
+A new MariaDB table is authored under the tracker owned by the
+**domain that specifies the table**.
+
+See [ADR-0005](ADR/0005-coexist-with-seaql-migrations.md) for the
+full ownership split, trade-offs, and lifecycle ordering rules.
+
+#### 4.4.4 Migrations vs. one-shot data seeds
+
+Migrations in `migrations/mariadb/` are **permanent history**: each file
+runs once per environment, is preserved in `schema_migrations` forever,
+and is never edited after it has been applied in any shared environment.
+
+One-shot data seeds (e.g. `scripts/seed-persons.sh` —
+see the identity-resolution DESIGN §Initial seed) are a different
+category of artifact: operator-triggered data bootstrap from another
+store, re-runnable via the seed's own idempotency (deterministic keys +
+`INSERT IGNORE`). They live at the top of `scripts/`, not under
+`migrations/`, and are deliberately excluded from `schema_migrations`
+bookkeeping.
 
 ## 5. Additional Context
 

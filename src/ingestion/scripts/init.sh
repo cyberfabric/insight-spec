@@ -26,13 +26,15 @@ kubectl exec -n data deploy/clickhouse -- clickhouse-client --password "$CH_PASS
 echo "=== Creating bronze placeholders for missing connectors ==="
 "$SCRIPT_DIR/create-bronze-placeholders.sh"
 
-echo "=== Running migrations ==="
+echo "=== Running ClickHouse migrations ==="
 for migration in "$SCRIPT_DIR/migrations"/*.sql; do
   [ -f "$migration" ] || continue
   echo "  $(basename "$migration")"
   grep -v '^\s*--' "$migration" \
     | kubectl exec -i -n data deploy/clickhouse -- clickhouse-client --password "$CH_PASS" --multiquery
 done
+
+"$SCRIPT_DIR/run-migrations-mariadb.sh"
 
 echo "=== Registering connectors ==="
 "${TOOLKIT_DIR}/register.sh" --all
