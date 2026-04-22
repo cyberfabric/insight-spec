@@ -15,14 +15,26 @@ SELECT
         toString(ma.date)
     )                                                               AS unique_key,
     toInt64(sum(ma.meetings_attended))                              AS meetings_count,
+    -- Use the longest modality (audio / video / screen-share) to avoid under-
+    -- counting M365 Teams participants who joined muted but with camera or
+    -- screen-share on. For Zoom, audio_duration is full participation time
+    -- and always dominates, so greatest(...) reduces to audio.
     ROUND(
-        sum(ma.audio_duration_seconds) / 3600.0,
+        sum(greatest(
+            ma.audio_duration_seconds,
+            ma.video_duration_seconds,
+            ma.screen_share_duration_seconds
+        )) / 3600.0,
         4
     )                                                               AS meeting_hours,
     COALESCE(wh.working_hours_per_day, 8.0)                        AS working_hours_per_day,
     ROUND(
         GREATEST(toFloat64(0), 100.0 - (
-            sum(ma.audio_duration_seconds)
+            sum(greatest(
+                ma.audio_duration_seconds,
+                ma.video_duration_seconds,
+                ma.screen_share_duration_seconds
+            ))
             / 3600.0
             / nullIf(COALESCE(wh.working_hours_per_day, 8.0), 0)
         ) * 100.0),
@@ -31,7 +43,11 @@ SELECT
     ROUND(
         GREATEST(toFloat64(0),
             COALESCE(wh.working_hours_per_day, 8.0) -
-            sum(ma.audio_duration_seconds) / 3600.0
+            sum(greatest(
+                ma.audio_duration_seconds,
+                ma.video_duration_seconds,
+                ma.screen_share_duration_seconds
+            )) / 3600.0
         ),
         4
     )                                                               AS dev_time_h

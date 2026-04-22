@@ -158,11 +158,13 @@ def discover_secrets():
                 raw = base64.b64decode(v).decode()
             except Exception:
                 raw = v
-            # Parse JSON values stored as strings in K8s Secrets
-            # (arrays, objects, booleans, numbers)
+            # Parse JSON values stored as strings in K8s Secrets —
+            # only promote arrays and objects. Airbyte source specs typically
+            # declare scalars (port, account_id, start_date, ...) as strings,
+            # so coercing "8080" → 8080 here breaks source validation.
             try:
                 parsed = json.loads(raw)
-                if isinstance(parsed, (list, dict, bool, int, float)):
+                if isinstance(parsed, (list, dict)):
                     data[k] = parsed
                 else:
                     data[k] = raw
