@@ -45,7 +45,7 @@ SELECT
     CAST(NULL AS Nullable(UInt32))                  AS cost_cents,
     'cursor'                                        AS source,
     'insight_cursor'                                AS data_source,
-    _airbyte_extracted_at                           AS collected_at
+    CAST(_airbyte_extracted_at AS Nullable(DateTime64(3))) AS collected_at
 FROM {{ source('bronze_cursor', 'cursor_daily_usage') }}
 WHERE isActive = true
   AND email IS NOT NULL

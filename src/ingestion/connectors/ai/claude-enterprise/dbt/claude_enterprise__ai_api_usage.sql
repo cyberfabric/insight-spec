@@ -44,7 +44,7 @@ WITH base AS (
         powerpoint_message_count,
         cowork_session_count,
         cowork_message_count,
-        collected_at
+        CAST(parseDateTime64BestEffortOrNull(coalesce(collected_at, ''), 3) AS Nullable(DateTime64(3))) AS collected_at
     FROM {{ source('bronze_claude_enterprise', 'claude_enterprise_users') }}
     WHERE user_email IS NOT NULL
       AND trim(user_email) != ''

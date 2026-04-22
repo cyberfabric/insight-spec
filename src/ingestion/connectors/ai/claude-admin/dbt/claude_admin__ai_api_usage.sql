@@ -51,7 +51,7 @@ SELECT
     CAST(NULL AS Nullable(String))                  AS cost_currency,
     'claude_admin'                                  AS source,
     'insight_claude_admin'                          AS data_source,
-    collected_at
+    CAST(parseDateTime64BestEffortOrNull(coalesce(collected_at, ''), 3) AS Nullable(DateTime64(3))) AS collected_at
 FROM {{ source('bronze_claude_admin', 'claude_admin_messages_usage') }}
 {% if is_incremental() %}
 WHERE toDate(date) > (
