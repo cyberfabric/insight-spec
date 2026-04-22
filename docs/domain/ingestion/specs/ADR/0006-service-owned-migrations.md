@@ -8,33 +8,18 @@ date: 2026-04-22
 
 ## Context
 
-Earlier work in PR #214 introduced a **global** MariaDB migration
-runner: a bash script (`run-migrations-mariadb.sh`) that applied
-`*.sql` / `*.sh` files from a central `src/ingestion/scripts/
-migrations/mariadb/` directory and tracked progress in a shared
-`schema_migrations` table. The runner was invoked from `init.sh` and
-`up.sh` before any backend service started.
+As new backend services acquire MariaDB-resident tables, we need a
+clear rule for **who authors and applies the schema**. Options include:
 
-This was reviewed and reverted during the same PR. The conclusion:
+- A single global migration runner operating over a shared schema
+  directory, invoked at deploy time.
+- Per-service migrations, owned and applied by the service itself.
 
-1. The global runner creates a **cross-cutting coupling**: every team
-   shipping MariaDB changes has to edit a directory that lives in
-   ingestion tooling, not in the domain's own codebase. Schema and
-   the code that depends on it live in two different places.
-
-2. Our one existing precedent — `analytics-api` — had already adopted
-   the **service-owned** pattern (SeaORM `Migrator` embedded in the
-   Rust service, applied via `Migrator::up()` at startup). Running
-   one global bash runner alongside an in-service SeaORM migrator was
-   two migration mechanisms for the same MariaDB instance — the topic
-   of the (now superseded) ADR-0005 "coexist with seaql_migrations".
-
-3. Database isolation was also shallow: our `persons` table initially
-   lived in the `analytics` database shared with analytics-api, then
-   moved to a dedicated `identity` database — but schema *authority*
-   was still in ingestion, not in the identity-resolution service.
-
-We therefore adopt one consistent rule across all backend services.
+Our one existing precedent — `analytics-api` — already follows the
+second pattern (SeaORM `Migrator` embedded in the Rust service,
+applied via `Migrator::up()` at startup). The open question for this
+ADR is whether to extend that pattern to every other service with
+MariaDB tables, or to introduce a separate mechanism alongside it.
 
 ## Decision
 
@@ -125,7 +110,3 @@ We therefore adopt one consistent rule across all backend services.
 - `docs/domain/identity-resolution/specs/ADR/0002-deterministic-person-id-for-seed.md`
   — seed contract, unchanged by this ADR (seed stays one-shot, not
   a migration).
-- Superseded: ADR-0004 (global MariaDB migration runner) and
-  ADR-0005 (coexistence of two trackers in one DB). Both are deleted
-  from the repository in the same commit that introduced this ADR —
-  neither was ever relied on outside this PR.

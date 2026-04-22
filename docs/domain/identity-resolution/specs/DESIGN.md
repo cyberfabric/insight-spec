@@ -734,9 +734,9 @@ The aggregated view is `identity_inputs` (plural, matching table-name convention
 
 **ID**: `cpt-insightspec-ir-dbtable-persons-mariadb`
 
-Field-level identity attribute history for persons, stored in MariaDB. Each row represents one observed field value for a person at a specific point in time — an SCD-style append-only log. Unlike `aliases` (resolved alias→person mapping in ClickHouse), `persons` captures the **history of field changes** that contribute to a person's identity: `email`, `display_name`, `platform_id`, `employee_id`, etc. This is the canonical CRUD-accessible person attribute store used by backend services.
+Field-level identity attribute history for persons, stored in MariaDB. Each row represents one observed field value for a person at a specific point in time — an SCD-style append-only observation table. Unlike `aliases` (resolved alias→person mapping in ClickHouse), `persons` captures the **history of field changes** that contribute to a person's identity: `email`, `display_name`, `platform_id`, `employee_id`, etc. This is the canonical CRUD-accessible person attribute store used by backend services.
 
-**Database**: MariaDB, database `identity` (dedicated to identity-resolution-domain tables). Analytics-api owns its own `analytics` database on the same MariaDB instance. Each backend service owns and applies its own schema — see [ADR-0006](../../ingestion/specs/ADR/0006-service-owned-migrations.md).
+**Database**: MariaDB, database `identity` — dedicated to identity-resolution-domain tables, reached via the service's `database_url` configuration. The service does not assume co-location with any other MariaDB database; any other service owning MariaDB tables configures its own connection independently. Each backend service owns and applies its own schema — see [ADR-0006](../../ingestion/specs/ADR/0006-service-owned-migrations.md).
 
 **DDL**: `src/backend/services/identity/src/migration/m20260421_000001_persons.rs` (SeaORM migration, raw SQL body)
 
@@ -755,7 +755,7 @@ Field-level identity attribute history for persons, stored in MariaDB. Each row 
 | `reason` | `TEXT NOT NULL DEFAULT ''` | Optional change-reason comment (empty for initial seed) |
 | `created_at` | `DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)` | When this record was inserted |
 
-**Primary key**: `id` (auto-increment integer — MariaDB convention, persons is a write-heavy append-only log).
+**Primary key**: `id` (auto-increment integer — MariaDB convention for append-only observation history; stable row identifier for operator references).
 
 **Indexes**:
 - `idx_person_id (person_id)` — lookup all fields for a person
@@ -764,7 +764,7 @@ Field-level identity attribute history for persons, stored in MariaDB. Each row 
 - `uq_person_observation (insight_tenant_id, person_id, insight_source_type, insight_source_id, alias_type, alias_value)` UNIQUE — enforces the natural observation key; combined with `INSERT IGNORE` in the seed, guarantees idempotent re-runs
 - `idx_source (insight_source_type, insight_source_id)` — filter by source system + instance
 
-##### Semantics — SCD-style append-only log
+##### Semantics — append-only observation history (SCD-style)
 
 `persons` is **append-only**. A change to a person's attribute does **not** update an existing row; it inserts a new row with a later `created_at`. The "current" value of any field is the row with the latest `created_at` for that `(insight_tenant_id, person_id, alias_type)` triple (or, for multi-valued fields, the latest non-empty row per source).
 
