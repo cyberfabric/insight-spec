@@ -110,9 +110,14 @@ models:
           - not_null
           - unique
       - name: email
-        description: "User email (actor_identifier) — identity key"
-        tests:
-          - not_null
+        description: >
+          User email (from actor_identifier) when actor_type='user'.
+          NULL when actor_type='api_actor' — use api_key_id instead.
+      - name: api_key_id
+        description: >
+          Anthropic API key ID for api_actor rows (resolved from
+          claude_admin_api_keys.name via JOIN). NULL for user rows.
+          Silver Step 2 maps this to person_id.
       - name: day
         description: "Usage date (UTC)"
         tests:

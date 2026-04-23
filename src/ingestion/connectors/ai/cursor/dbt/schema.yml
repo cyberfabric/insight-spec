@@ -31,6 +31,8 @@ models:
         description: "Work email (lowercased) — identity key"
         tests:
           - not_null
+      - name: api_key_id
+        description: "Always NULL — Cursor uses session auth, not API keys"
       - name: day
         description: "Usage date (UTC)"
         tests:

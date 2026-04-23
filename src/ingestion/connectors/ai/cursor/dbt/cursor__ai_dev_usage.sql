@@ -30,6 +30,7 @@ SELECT
     concat(tenant_id, '-', source_id, '-', userId, '-', toString(toDate(fromUnixTimestamp64Milli(CAST(date AS Int64)))))
                                                     AS unique_key,
     lower(trim(email))                              AS email,
+    CAST(NULL AS Nullable(String))                  AS api_key_id,
     toDate(fromUnixTimestamp64Milli(CAST(date AS Int64))) AS day,
     'cursor'                                        AS tool,
     toUInt32(1)                                     AS session_count,

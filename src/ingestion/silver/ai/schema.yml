@@ -30,9 +30,21 @@ models:
           - not_null
           - unique
       - name: email
-        description: "Work email — identity key consumed by Silver Step 2 (Identity Resolution) to resolve person_id"
-        tests:
-          - not_null
+        description: >
+          Work email when directly available from the source (Cursor and
+          Claude Code rows with actor_type='user'). NULL for rows where
+          the source authenticated via an API key (Claude Code rows with
+          actor_type='api_actor') — in that case api_key_id carries the
+          identity proxy and Silver Step 2 (Identity Resolution) maps
+          api_key_id → person_id. At least one of email / api_key_id is
+          always populated.
+      - name: api_key_id
+        description: >
+          Anthropic API key identifier. Populated when a source authenticated
+          via an API key rather than a user session (common for Claude Code
+          CLI: organisations provision named per-developer keys). Resolved
+          to person_id in Silver Step 2 via identity.aliases. NULL for
+          Cursor and for Claude Code rows with actor_type='user'.
       - name: day
         description: "Calendar date of usage (UTC)"
         tests:
