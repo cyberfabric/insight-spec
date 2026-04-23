@@ -1,0 +1,42 @@
+##
+## Insight umbrella — dev / eval overlay.
+##
+## Supplies the credentials that the canonical charts/insight/values.yaml
+## intentionally leaves EMPTY, so production installs fail fast on missing
+## secrets. For local Kind clusters / eval installs, merge this overlay:
+##
+##   helm upgrade --install insight charts/insight \
+##     -f charts/insight/values.yaml \
+##     -f deploy/values-dev.yaml
+##
+## `./dev-up.sh` applies it automatically.
+##
+## DO NOT use these credentials in production — they are throwaway defaults
+## for a disposable cluster.
+##
+
+# ─── Bundled-infra credentials ───────────────────────────────────────────
+clickhouse:
+  auth:
+    password: "insight-dev"
+
+mariadb:
+  auth:
+    password: "insight-dev"
+    rootPassword: "root-dev"
+
+# ─── App-service inline DB/cache references (dev path) ──────────────────
+# These hardcode the release-namespace Service names. If you deploy under
+# a release name other than `insight`, override here too.
+
+analyticsApi:
+  database:
+    url: "mysql://insight:insight-dev@insight-mariadb:3306/insight"
+  clickhouse:
+    user: "insight"
+    password: "insight-dev"
+
+identity:
+  clickhouse:
+    user: "insight"
+    password: "insight-dev"

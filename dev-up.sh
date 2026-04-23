@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Insight platform — bring up all services in a Kubernetes cluster.
+# Insight platform — DEV bring-up from source.
+#
+# Use this when you work on the codebase: builds Docker images from src/,
+# creates a local Kind cluster (or targets a dev-owned remote like virtuozzo),
+# loads images into the cluster, and deploys all services.
+#
+# NOT for end-user installations. For customers / production-like installs
+# from published chart artifacts, use:  deploy/scripts/install.sh
 #
 # Environment is selected with --env <name>. Configuration for each environment
 # lives in .env.<name> at the repo root. See .env.local.example for the full
@@ -13,10 +20,10 @@
 #   5. Frontend (SPA)
 #
 # Usage:
-#   ./up.sh                         # --env local, all components
-#   ./up.sh --env virtuozzo         # remote cluster, all components
-#   ./up.sh --env virtuozzo app     # backend + frontend only
-#   ./up.sh ingestion               # only ingestion (default env=local)
+#   ./dev-up.sh                         # --env local, all components
+#   ./dev-up.sh --env virtuozzo         # remote cluster, all components
+#   ./dev-up.sh --env virtuozzo app     # backend + frontend only
+#   ./dev-up.sh ingestion               # only ingestion (default env=local)
 #
 # Valid components: all | ingestion | app | backend | frontend
 set -euo pipefail
@@ -178,65 +185,10 @@ fi
 # ─── Namespace ────────────────────────────────────────────────────────────
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-# ─── Ingestion ────────────────────────────────────────────────────────────
-if [[ "$COMPONENT" == "all" || "$COMPONENT" == "ingestion" ]]; then
-  ENV="$ENV_NAME" "$ROOT_DIR/src/ingestion/up.sh"
-fi
+# ─── Image build (dev-only) ───────────────────────────────────────────────
+# For the dev loop we build container images from src/ and load them into
+# Kind. Prod customers use pre-published images from ghcr.io.
 
-# ─── App-level infra (redis) ──────────────────────────────────────────────
-# Plain Deployment + Service. Cache only — no persistence, no auth.
-# (Using redis:7-alpine from Docker Hub; bitnami/redis chart images moved
-# behind a paywall in 2025 and no longer pull freely.)
-if [[ "$COMPONENT" == "all" || "$COMPONENT" == "app" || "$COMPONENT" == "infra" ]]; then
-  if [[ "${DEPLOY_REDIS:-false}" == "true" ]]; then
-    echo "=== Deploying Redis ==="
-    kubectl apply -n "$NAMESPACE" -f - <<'EOF'
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: insight-redis-master
-  labels: {app.kubernetes.io/name: redis, app.kubernetes.io/instance: insight-redis}
-spec:
-  replicas: 1
-  selector:
-    matchLabels: {app.kubernetes.io/name: redis, app.kubernetes.io/instance: insight-redis}
-  template:
-    metadata:
-      labels: {app.kubernetes.io/name: redis, app.kubernetes.io/instance: insight-redis}
-    spec:
-      containers:
-        - name: redis
-          image: redis:7-alpine
-          args: ["redis-server", "--appendonly", "no", "--save", ""]
-          ports:
-            - name: tcp-redis
-              containerPort: 6379
-          readinessProbe:
-            tcpSocket: {port: tcp-redis}
-            initialDelaySeconds: 2
-            periodSeconds: 5
-          resources:
-            requests: {cpu: 50m, memory: 32Mi}
-            limits:   {cpu: 200m, memory: 128Mi}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: insight-redis-master
-  labels: {app.kubernetes.io/name: redis, app.kubernetes.io/instance: insight-redis}
-spec:
-  type: ClusterIP
-  selector: {app.kubernetes.io/name: redis, app.kubernetes.io/instance: insight-redis}
-  ports:
-    - name: tcp-redis
-      port: 6379
-      targetPort: tcp-redis
-EOF
-    kubectl rollout status deployment/insight-redis-master -n "$NAMESPACE" --timeout=2m
-  fi
-fi
-
-# ─── Backend ──────────────────────────────────────────────────────────────
 image_tag_for() {
   local svc="$1"
   # Per-service override: API_GATEWAY_IMAGE_TAG, ANALYTICS_API_IMAGE_TAG, etc.
@@ -250,23 +202,17 @@ image_ref() {
 }
 
 build_and_load_image() {
-  local svc="$1" dockerfile="$2"
+  local svc="$1" dockerfile="$2" ctx="${3:-src/backend/}"
   local full; full=$(image_ref "$svc")
 
   if [[ "$BUILD_IMAGES" == "true" ]]; then
     if [[ -n "$IMAGE_PLATFORM" ]]; then
-      # Cross-platform build via buildx. For non-native platforms, buildx cannot
-      # load the result into the local docker image store — we push directly.
-      if [[ -z "$IMAGE_REGISTRY" ]]; then
-        echo "ERROR: IMAGE_PLATFORM set but IMAGE_REGISTRY is empty — cross-platform build needs a registry to push to" >&2
-        exit 1
-      fi
+      [[ -n "$IMAGE_REGISTRY" ]] || { echo "ERROR: IMAGE_PLATFORM requires IMAGE_REGISTRY" >&2; exit 1; }
       echo "  Building ${full} for ${IMAGE_PLATFORM} (buildx + push)..."
-      docker buildx build --platform "$IMAGE_PLATFORM" \
-        -t "$full" -f "$dockerfile" --push src/backend/
+      docker buildx build --platform "$IMAGE_PLATFORM" -t "$full" -f "$dockerfile" --push "$ctx"
     else
       echo "  Building ${full}..."
-      docker build -t "$full" -f "$dockerfile" src/backend/
+      docker build -t "$full" -f "$dockerfile" "$ctx"
       if [[ -n "$IMAGE_REGISTRY" && "$BUILD_AND_PUSH" == "true" ]]; then
         echo "  Pushing ${full}..."
         docker push "$full"
@@ -279,145 +225,137 @@ build_and_load_image() {
   fi
 }
 
-helm_image_args() {
-  local full="$1"
-  local repo="${full%:*}"
-  local tag="${full##*:}"
-  printf -- '--set image.repository=%s --set image.tag=%s --set image.pullPolicy=%s' \
-    "$repo" "$tag" "$IMAGE_PULL_POLICY"
-  if [[ -n "$IMAGE_PULL_SECRET" ]]; then
-    printf -- ' --set imagePullSecrets[0].name=%s' "$IMAGE_PULL_SECRET"
-  fi
-}
-
-if [[ "$COMPONENT" == "all" || "$COMPONENT" == "app" || "$COMPONENT" == "backend" ]]; then
+# App services are MANDATORY components of the umbrella (no enabled-flag),
+# so whenever we install the umbrella — including `frontend` or `backend`
+# component runs that trigger helm upgrade — every image must be present
+# in the cluster. Otherwise backend pods land in ImagePullBackOff.
+if [[ "$COMPONENT" != "ingestion" ]]; then
+  echo "=== Building backend images ==="
   build_and_load_image analytics-api src/backend/services/analytics-api/Dockerfile
-  build_and_load_image identity       src/backend/services/identity/Dockerfile
-  build_and_load_image api-gateway    src/backend/services/api-gateway/Dockerfile
-  ANALYTICS_IMG=$(image_ref analytics-api)
-  IDENTITY_IMG=$(image_ref identity)
-  GATEWAY_IMG=$(image_ref api-gateway)
+  build_and_load_image identity      src/backend/services/identity/Dockerfile
+  build_and_load_image api-gateway   src/backend/services/api-gateway/Dockerfile
 
-  # ── Service wiring (env-configurable) ───────────────────────────────
-  ANALYTICS_DB_URL="${ANALYTICS_DB_URL:-mysql://insight:insight-pass@insight-mariadb:3306/analytics}"
-  CLICKHOUSE_URL="${CLICKHOUSE_URL:-http://clickhouse.data.svc.cluster.local:8123}"
-  CLICKHOUSE_DB="${CLICKHOUSE_DB:-insight}"
-  CLICKHOUSE_CREDENTIALS_SECRET="${CLICKHOUSE_CREDENTIALS_SECRET:-}"
-  CLICKHOUSE_CREDENTIALS_USER_KEY="${CLICKHOUSE_CREDENTIALS_USER_KEY:-username}"
-  CLICKHOUSE_CREDENTIALS_PASSWORD_KEY="${CLICKHOUSE_CREDENTIALS_PASSWORD_KEY:-password}"
-  # Inline fallback: only used when CLICKHOUSE_CREDENTIALS_SECRET is empty
-  CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
-  CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
-  REDIS_URL="${REDIS_URL:-redis://insight-redis-master:6379}"
-  IDENTITY_URL="${IDENTITY_URL:-http://insight-identity-identity-resolution:8082}"
-
-  # Build --set args for ClickHouse credentials: prefer secretRef
-  CH_CREDS_ARGS=()
-  if [[ -n "$CLICKHOUSE_CREDENTIALS_SECRET" ]]; then
-    CH_CREDS_ARGS+=(
-      --set clickhouse.credentialsSecret.name="$CLICKHOUSE_CREDENTIALS_SECRET"
-      --set clickhouse.credentialsSecret.userKey="$CLICKHOUSE_CREDENTIALS_USER_KEY"
-      --set clickhouse.credentialsSecret.passwordKey="$CLICKHOUSE_CREDENTIALS_PASSWORD_KEY"
-      --set clickhouse.user=
-      --set clickhouse.password=
-    )
-  else
-    CH_CREDS_ARGS+=(
-      --set clickhouse.user="$CLICKHOUSE_USER"
-      --set clickhouse.password="$CLICKHOUSE_PASSWORD"
-    )
-  fi
-
-  echo "=== Deploying Analytics API ==="
-  # shellcheck disable=SC2046
-  helm upgrade --install insight-analytics src/backend/services/analytics-api/helm/ \
-    --namespace "$NAMESPACE" \
-    $(helm_image_args "$ANALYTICS_IMG") \
-    --set database.url="$ANALYTICS_DB_URL" \
-    --set clickhouse.url="$CLICKHOUSE_URL" \
-    --set clickhouse.database="$CLICKHOUSE_DB" \
-    "${CH_CREDS_ARGS[@]}" \
-    --set redis.url="$REDIS_URL" \
-    --set identityResolution.url="$IDENTITY_URL" \
-    --set-string podAnnotations.deployedAt="$DEPLOY_TS" \
-    --wait --timeout 3m
-
-  echo "=== Deploying Identity Resolution ==="
-  # shellcheck disable=SC2046
-  helm upgrade --install insight-identity src/backend/services/identity/helm/ \
-    --namespace "$NAMESPACE" \
-    $(helm_image_args "$IDENTITY_IMG") \
-    --set clickhouse.url="$CLICKHOUSE_URL" \
-    --set clickhouse.database="$CLICKHOUSE_DB" \
-    "${CH_CREDS_ARGS[@]}" \
-    --set-string podAnnotations.deployedAt="$DEPLOY_TS" \
-    --wait --timeout 3m
-
-  echo "=== Deploying API Gateway ==="
-  GW_ARGS=(
-    --namespace "$NAMESPACE"
-    --set ingress.enabled="$INGRESS_ENABLED"
-    --set ingress.className="$INGRESS_CLASS"
-    --set gateway.enableDocs=true
-    --set authDisabled="$AUTH_DISABLED"
-    --set proxy.routes[0].prefix=/analytics
-    --set proxy.routes[0].upstream=http://insight-analytics-analytics-api:8081
-    --set proxy.routes[0].public=false
-    --set proxy.routes[1].prefix=/identity-resolution
-    --set proxy.routes[1].upstream=http://insight-identity-identity-resolution:8082
-    --set proxy.routes[1].public=false
-    --set-string podAnnotations.deployedAt="$DEPLOY_TS"
-  )
-  # shellcheck disable=SC2206
-  GW_ARGS+=( $(helm_image_args "$GATEWAY_IMG") )
-  if [[ "$AUTH_DISABLED" != "true" ]]; then
-    if [[ -n "$OIDC_EXISTING_SECRET" ]]; then
-      GW_ARGS+=( --set oidc.existingSecret="$OIDC_EXISTING_SECRET" )
-    else
-      GW_ARGS+=(
-        --set oidc.issuer="$OIDC_ISSUER"
-        --set oidc.audience="$OIDC_AUDIENCE"
-        --set oidc.clientId="$OIDC_CLIENT_ID"
-        --set oidc.redirectUri="$OIDC_REDIRECT_URI"
-      )
-    fi
-  fi
-  helm upgrade --install insight-gw src/backend/services/api-gateway/helm/ "${GW_ARGS[@]}" --wait --timeout 3m
-fi
-
-# ─── Frontend ─────────────────────────────────────────────────────────────
-if [[ "$COMPONENT" == "all" || "$COMPONENT" == "app" || "$COMPONENT" == "frontend" ]]; then
+  # Frontend — always pull; it is built in the insight-front repo.
   FE_REPO="${FE_IMAGE_REPOSITORY:-ghcr.io/cyberfabric/insight-front}"
   FE_TAG="${FE_IMAGE_TAG:-latest}"
   FE_IMAGE="${FE_REPO}:${FE_TAG}"
-
   echo "=== Pulling Frontend image ==="
   docker pull "$FE_IMAGE"
-  if [[ "$LOAD_IMAGES_INTO_KIND" == "true" ]]; then
-    kind load docker-image "$FE_IMAGE" --name "${CLUSTER_NAME}"
-  fi
-
-  echo "=== Deploying Frontend ==="
-  FE_ARGS=(
-    --namespace "$NAMESPACE"
-    --set image.repository="$FE_REPO"
-    --set image.tag="$FE_TAG"
-    --set image.pullPolicy="$IMAGE_PULL_POLICY"
-    --set ingress.enabled="$INGRESS_ENABLED"
-    --set ingress.className="$INGRESS_CLASS"
-    --set-string podAnnotations.deployedAt="$DEPLOY_TS"
-  )
-  if [[ -n "$IMAGE_PULL_SECRET" ]]; then
-    FE_ARGS+=( --set "imagePullSecrets[0].name=$IMAGE_PULL_SECRET" )
-  fi
-  helm upgrade --install insight-fe src/frontend/helm/ "${FE_ARGS[@]}" --wait --timeout 3m
+  [[ "$LOAD_IMAGES_INTO_KIND" == "true" ]] && kind load docker-image "$FE_IMAGE" --name "${CLUSTER_NAME}"
 fi
+
+# ─── Generate dev overrides for umbrella ──────────────────────────────────
+# The canonical installer reads the umbrella values.yaml plus overrides.
+# We produce a single tempfile with env-derived values; the standing
+# `deploy/values-dev.yaml` overlay (eval-grade credentials that the
+# canonical chart leaves empty) is passed as the first -f via
+# INSIGHT_VALUES_FILES, so helm merges them in order.
+DEV_VALUES=$(mktemp)
+trap 'rm -f "$DEV_VALUES"' EXIT
+
+ANALYTICS_IMG=$(image_ref analytics-api)
+IDENTITY_IMG=$(image_ref identity)
+GATEWAY_IMG=$(image_ref api-gateway)
+
+split_image() { printf '%s\n%s\n' "${1%:*}" "${1##*:}"; }
+read -r GW_REPO GW_TAG_VAL < <(split_image "$GATEWAY_IMG" | tr '\n' ' ')
+read -r AN_REPO AN_TAG_VAL < <(split_image "$ANALYTICS_IMG" | tr '\n' ' ')
+read -r ID_REPO ID_TAG_VAL < <(split_image "$IDENTITY_IMG" | tr '\n' ' ')
+
+cat > "$DEV_VALUES" <<EOF
+# Auto-generated by dev-up.sh — do not edit (values derived from .env.${ENV_NAME})
+apiGateway:
+  image:
+    repository: "${GW_REPO}"
+    tag: "${GW_TAG_VAL}"
+    pullPolicy: "${IMAGE_PULL_POLICY}"
+  authDisabled: ${AUTH_DISABLED}
+  oidc:
+    existingSecret: "${OIDC_EXISTING_SECRET}"
+    issuer: "${OIDC_ISSUER}"
+    audience: "${OIDC_AUDIENCE}"
+    clientId: "${OIDC_CLIENT_ID}"
+    redirectUri: "${OIDC_REDIRECT_URI}"
+  ingress:
+    enabled: ${INGRESS_ENABLED}
+    className: "${INGRESS_CLASS}"
+  gateway:
+    enableDocs: true
+analyticsApi:
+  image:
+    repository: "${AN_REPO}"
+    tag: "${AN_TAG_VAL}"
+    pullPolicy: "${IMAGE_PULL_POLICY}"
+identity:
+  image:
+    repository: "${ID_REPO}"
+    tag: "${ID_TAG_VAL}"
+    pullPolicy: "${IMAGE_PULL_POLICY}"
+frontend:
+  image:
+    repository: "${FE_REPO:-ghcr.io/cyberfabric/insight-front}"
+    tag: "${FE_TAG:-latest}"
+    pullPolicy: "${IMAGE_PULL_POLICY}"
+  ingress:
+    enabled: ${INGRESS_ENABLED}
+    className: "${INGRESS_CLASS}"
+EOF
+
+if [[ -n "$IMAGE_PULL_SECRET" ]]; then
+  cat >> "$DEV_VALUES" <<EOF
+global:
+  imagePullSecrets:
+    - name: "${IMAGE_PULL_SECRET}"
+EOF
+fi
+
+# Detect whether Argo CRDs are present. Umbrella ships WorkflowTemplate
+# objects which require the Argo CRDs; if Argo was not installed yet
+# (e.g. the dev runs `./dev-up.sh backend`), the umbrella would fail with
+# `no matches for kind "WorkflowTemplate"`. Skip ingestion templates in
+# that case — running `./dev-up.sh ingestion` or `all` installs them.
+ARGO_CRD_GUARD=""
+if ! kubectl get crd workflowtemplates.argoproj.io >/dev/null 2>&1; then
+  ARGO_CRD_GUARD="--set ingestion.templates.enabled=false"
+fi
+
+# Ordered list of values files passed to the umbrella. dev overlay first
+# (base eval credentials), env-derived override file second (wins).
+INSIGHT_VALUES_FILES="$ROOT_DIR/deploy/values-dev.yaml:$DEV_VALUES"
+
+# ─── Delegate to canonical installers ─────────────────────────────────────
+case "$COMPONENT" in
+  all)
+    INSIGHT_NAMESPACE="$NAMESPACE" \
+      INSIGHT_VALUES_FILES="$INSIGHT_VALUES_FILES" \
+      "$ROOT_DIR/deploy/scripts/install.sh"
+    ;;
+  ingestion)
+    INSIGHT_NAMESPACE="$NAMESPACE" "$ROOT_DIR/deploy/scripts/install-airbyte.sh"
+    INSIGHT_NAMESPACE="$NAMESPACE" "$ROOT_DIR/deploy/scripts/install-argo.sh"
+    ;;
+  app|backend|frontend)
+    # The umbrella deploys EVERYTHING: infra + backend + frontend. For
+    # backend-only or frontend-only runs we keep the full deploy —
+    # helm upgrade is idempotent and app services are mandatory
+    # components of the umbrella (no per-service enable flag).
+    SKIP_AIRBYTE=1 SKIP_ARGO=1 \
+      INSIGHT_NAMESPACE="$NAMESPACE" \
+      INSIGHT_VALUES_FILES="$INSIGHT_VALUES_FILES" \
+      HELM_EXTRA_ARGS="$ARGO_CRD_GUARD" \
+      "$ROOT_DIR/deploy/scripts/install.sh"
+    ;;
+  *)
+    echo "ERROR: unknown component: $COMPONENT (expected: all|ingestion|app|backend|frontend)" >&2
+    exit 1
+    ;;
+esac
 
 # ─── Airbyte port-forward (local only) ────────────────────────────────────
 if [[ "$CLUSTER_MODE" == "local" && ("$COMPONENT" == "all" || "$COMPONENT" == "ingestion") ]]; then
   echo "=== Starting Airbyte port-forward ==="
   pkill -f 'port-forward.*airbyte' 2>/dev/null || true
-  kubectl -n airbyte port-forward svc/airbyte-airbyte-server-svc 8001:8001 >/dev/null 2>&1 &
+  kubectl -n "$NAMESPACE" port-forward svc/airbyte-airbyte-server-svc 8001:8001 >/dev/null 2>&1 &
 fi
 
 # ─── Summary ──────────────────────────────────────────────────────────────
@@ -433,10 +371,10 @@ if [[ "$CLUSTER_MODE" == "local" ]]; then
 else
   echo "  Access via VPN-reachable node IP on port ${INGRESS_HTTP_PORT}"
 fi
-if kubectl get secret airbyte-auth-secrets -n airbyte &>/dev/null; then
+if kubectl get secret airbyte-auth-secrets -n "$NAMESPACE" &>/dev/null; then
   echo ""
   echo "  Airbyte UI login:"
   echo "    Email:    admin@example.com"
-  echo "    Password: kubectl get secret airbyte-auth-secrets -n airbyte -o jsonpath='{.data.instance-admin-password}' | base64 -d"
+  echo "    Password: kubectl get secret airbyte-auth-secrets -n $NAMESPACE -o jsonpath='{.data.instance-admin-password}' | base64 -d"
 fi
 echo "═══════════════════════════════════════════════════════════════"

@@ -1,0 +1,360 @@
+##
+## Insight umbrella — default values.
+##
+## Customers override these with their own values.yaml (secrets, hosts, tuning).
+##
+## Commands for verification:
+##   helm dependency update charts/insight
+##   helm template insight charts/insight | less
+##   helm template insight charts/insight -f my-values.yaml | less
+##
+## ─────────────────────────────────────────────────────────────────────────
+## Conventions
+## ─────────────────────────────────────────────────────────────────────────
+## 1. Release name = `insight`. All internal DNS names follow the pattern
+##    `{.Release.Name}-{component}` (insight-clickhouse, insight-mariadb,
+##    insight-api-gateway, ...). If you deploy under a different release
+##    name, override the corresponding URLs in your values.
+##
+## 2. SINGLE-NAMESPACE model: Airbyte, Argo Workflows and the umbrella are
+##    separate Helm releases that all deploy into the release namespace
+##    (default `insight`). Multiple Insight instances on one cluster use
+##    different namespaces — each is self-contained.
+##
+## 3. Each INFRA dependency (ClickHouse, MariaDB, Redis, Redpanda) has an
+##    `enabled: true/false` switch to support Constructor Platform
+##    integration, where infra may be managed centrally and shared across
+##    products:
+##      - enabled: true  → bundled subchart is installed
+##      - enabled: false → external service is used; the `external:` block
+##                         must be filled (host/port/secrets)
+##    The validator in templates/_helpers.tpl fails fast with a clear
+##    error when `enabled: false` is used without `external.host`.
+##
+## 4. APP services (apiGateway, analyticsApi, identity, frontend) are
+##    MANDATORY components of the umbrella — no enabled-flag. The gateway
+##    is the only entrance to the cluster internals; the remaining services
+##    are reachable only through it. This matches the Constructor Platform
+##    integration contract.
+##
+## 5. Resolved infra coordinates (URLs, hosts) live in a single ConfigMap
+##    named `{release}-platform` (see templates/platform-config.yaml).
+##    Any pod in the namespace can read them via `envFrom`.
+##
+
+# ─── Global values ────────────────────────────────────────────────────────
+# Everything under `global:` is visible to all subcharts automatically.
+# IMPORTANT: bitnami charts read `global.imageRegistry` and rewrite all
+# their images to use it. Do NOT set `imageRegistry` here — each of our
+# services sets `image.repository` explicitly.
+global:
+  imagePullSecrets: []         # pull-secrets for a private registry
+  storageClass: ""             # empty = default StorageClass of the cluster
+  security:
+    # bitnami charts check that the image belongs to their "secure images"
+    # list. We use bitnamilegacy (see mariadb.image / redis.image) so we
+    # have to allow "insecure" images — otherwise the chart refuses to deploy.
+    allowInsecureImages: true
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  EXTERNAL — Airbyte (installed as a separate Helm release, SAME namespace)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Single-namespace model: Airbyte, Argo Workflows, and the umbrella all
+# live in the release namespace. The Airbyte URL is computed from
+# `airbyte.releaseName` + `.Release.Namespace` (see templates/_helpers.tpl
+# → insight.airbyte.url).
+#
+# For Constructor Platform integration, set `apiUrl` explicitly to point
+# at the platform's externally-managed Airbyte.
+#
+airbyte:
+  releaseName: airbyte             # Helm release name used by install-airbyte.sh
+  apiUrl: ""                       # "" = compute from releaseName + namespace
+  jwtSecret:
+    name: airbyte-auth-secrets     # created by the Airbyte chart
+    key:  jwt-signature-secret
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  INGESTION — WorkflowTemplates (content for Argo)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# The WorkflowTemplates require the Argo Workflows CRDs to be present in
+# the cluster. If Argo is not installed, set enabled=false or the umbrella
+# will fail with `no matches for kind "WorkflowTemplate"`.
+#
+ingestion:
+  templates:
+    enabled: true
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  INFRASTRUCTURE
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Pattern for each dependency:
+#   <dep>.enabled      — true = install bundled subchart
+#   <dep>.external.*   — coordinates of the external service when enabled=false
+#   <dep>.auth.*       — credentials for the bundled subchart when enabled=true
+#
+
+# ─── ClickHouse ──────────────────────────────────────────────────────────
+clickhouse:
+  enabled: true
+  database: "insight"           # DB name, used for both internal and external
+
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: "25.3"
+  auth:
+    username: insight
+    # Empty by default — validator fails at install time unless set.
+    # Use `-f deploy/values-dev.yaml` for eval / dev defaults.
+    password: ""
+  persistence:
+    size: 10Gi
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: "2",  memory: 4Gi   }
+
+  # External mode: fill these in and set enabled=false
+  external:
+    host: ""                     # e.g. clickhouse.internal.acme.com
+    port: ""                     # e.g. 8123 — no default, must be explicit
+    credentialsSecret:
+      name: ""                   # Secret in the insight ns with username/password keys
+      userKey: "username"
+      passwordKey: "password"
+
+# ─── MariaDB (bitnami) ───────────────────────────────────────────────────
+# NB: bitnami removed free images from docker.io/bitnami/* in 2025
+# (see https://github.com/bitnami/charts/issues/30850). We point at the
+# bitnamilegacy repository — same images, still free. For enterprise use
+# your own registry (and set `global.security.allowInsecureImages`).
+mariadb:
+  enabled: true
+  architecture: standalone
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/mariadb
+  auth:
+    database: insight
+    username: insight
+    # Empty by default — validator fails at install time unless set.
+    # Use `-f deploy/values-dev.yaml` for eval / dev defaults.
+    password: ""
+    rootPassword: ""
+  primary:
+    persistence:
+      size: 5Gi
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits:   { cpu: 500m, memory: 512Mi }
+
+  external:
+    host: ""                     # e.g. mysql.internal.acme.com
+    port: ""                     # e.g. 3306
+    database: ""                 # e.g. insight
+    credentialsSecret:
+      name: ""                   # Secret with username/password keys
+      userKey: "username"
+      passwordKey: "password"
+
+# ─── Redis (bitnami) ─────────────────────────────────────────────────────
+# Same registry caveat as mariadb above.
+redis:
+  enabled: true
+  architecture: standalone
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/redis
+  auth:
+    enabled: false              # eval default. For prod → true + passwordSecret
+  master:
+    persistence:
+      size: 1Gi
+    resources:
+      requests: { cpu: 50m,  memory: 64Mi }
+      limits:   { cpu: 250m, memory: 128Mi }
+
+  external:
+    host: ""                     # e.g. redis.internal.acme.com
+    port: ""                     # e.g. 6379
+    passwordSecret:
+      name: ""
+      key: "password"
+
+# ─── Redpanda ────────────────────────────────────────────────────────────
+# For enterprise: TLS on, SASL on, 3+ replicas.
+redpanda:
+  enabled: true
+  statefulset:
+    replicas: 1
+  resources:
+    cpu:
+      cores: 1
+    memory:
+      container:
+        max: 1536Mi
+      redpanda:
+        memory: 1Gi
+        reserveMemory: 256Mi
+  storage:
+    persistentVolume:
+      size: 10Gi
+  tls:
+    enabled: false
+  auth:
+    sasl:
+      enabled: false
+  console:
+    enabled: true
+
+  external:
+    brokers: ""                  # "broker1:9092,broker2:9092" — no default
+    tls:
+      enabled: false
+    sasl:
+      enabled: false
+      mechanism: "SCRAM-SHA-256"
+      credentialsSecret:
+        name: ""
+        usernameKey: "username"
+        passwordKey: "password"
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  APPLICATION SERVICES (mandatory — no enabled-flag)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# NOTE: values like `<svc>.database.url`, `<svc>.clickhouse.url`,
+# `<svc>.redis.url` are hardcoded to the internal DNS. Helm cannot
+# template values files, so when you flip infra to external mode
+# (enabled: false + external.host: ...) you MUST also override the
+# corresponding URLs in your overrides.
+#
+# Preferred long-term path: migrate these services to read from the
+# {release}-platform ConfigMap via envFrom (see templates/platform-config.yaml).
+# Then URLs become unnecessary in values. Planned for the next iteration.
+
+# ─── API Gateway ─────────────────────────────────────────────────────────
+apiGateway:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/cyberfabric/insight-api-gateway
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 256Mi }
+
+  ingress:
+    enabled: false
+    className: nginx
+    host: ""
+    tls:
+      enabled: false
+      secretName: ""
+
+  # OIDC (required in prod — either existingSecret, or ALL three inline
+  # fields: issuer + clientId + redirectUri). The umbrella validator
+  # fails when authDisabled=false and OIDC is partially configured.
+  oidc:
+    existingSecret: ""
+    issuer: ""
+    audience: "api://insight"
+    clientId: ""
+    redirectUri: ""
+
+  authDisabled: false           # true = disable auth (LOCAL DEV ONLY)
+
+  clickhouse:
+    url: "http://insight-clickhouse:8123"   # must match the resolved URL
+    database: "gold"
+
+  gateway:
+    prefixPath: "/api"
+    corsEnabled: true
+    enableDocs: false
+    rateLimit: { rps: 100, burst: 50, inFlight: 32 }
+
+  proxy:
+    routes:
+      - prefix: "/analytics"
+        upstream: "http://insight-analytics-api:8081"
+        public: false
+
+# ─── Analytics API ───────────────────────────────────────────────────────
+analyticsApi:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/cyberfabric/insight-analytics-api
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 512Mi }
+
+  database:
+    # Constructed by the analytics-api pod from env vars exposed by the
+    # {release}-platform ConfigMap + credentials Secret. Override only when
+    # pointing at a non-standard host. Empty by default — validator requires
+    # analyticsApi.database.existingSecret OR this inline url.
+    url: ""
+    existingSecret: ""           # preferred in prod — Secret holds a full DSN
+
+  clickhouse:
+    url: "http://insight-clickhouse:8123"
+    database: "insight"
+    credentialsSecret:
+      name: ""
+      userKey: "username"
+      passwordKey: "password"
+    # Inline creds (dev only). Empty in canonical values; dev overlay fills.
+    user: ""
+    password: ""
+
+  identityResolution:
+    url: "http://insight-identity-resolution:8082"
+
+  redis:
+    url: "redis://insight-redis-master:6379"
+
+# ─── Identity Resolution ─────────────────────────────────────────────────
+identity:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/cyberfabric/insight-identity-resolution
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+  clickhouse:
+    url: "http://insight-clickhouse:8123"
+    database: "insight"
+    credentialsSecret:
+      name: ""
+      userKey: "username"
+      passwordKey: "password"
+    # Inline creds (dev only). Empty in canonical values; dev overlay fills.
+    user: ""
+    password: ""
+
+# ─── Frontend (SPA) ──────────────────────────────────────────────────────
+frontend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/cyberfabric/insight-front
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+
+  ingress:
+    enabled: false
+    className: nginx
+    host: ""
+
+  oidc:
+    issuer: ""
+    clientId: ""

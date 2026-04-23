@@ -2,7 +2,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: airbyte-sync
-  namespace: argo
   labels:
     app.kubernetes.io/part-of: ingestion
 spec:
@@ -13,7 +12,7 @@ spec:
         parameters:
           - name: connection_id
           - name: airbyte_url
-            default: "http://airbyte-airbyte-server-svc.airbyte.svc.cluster.local:8001"
+            default: "__AIRBYTE_URL__"
       steps:
         - - name: trigger
             template: trigger-sync

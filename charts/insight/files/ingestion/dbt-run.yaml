@@ -2,7 +2,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: dbt-run
-  namespace: argo
   labels:
     app.kubernetes.io/part-of: ingestion
 spec:
@@ -16,9 +15,9 @@ spec:
           - name: toolbox_image
             default: "ghcr.io/cyberfabric/insight-toolbox:latest"
           - name: clickhouse_host
-            default: "clickhouse.data.svc.cluster.local"
+            default: "__CLICKHOUSE_FQDN__"
           - name: clickhouse_port
-            default: "8123"
+            default: "__CLICKHOUSE_PORT__"
       activeDeadlineSeconds: 1800
       script:
         image: "{{inputs.parameters.toolbox_image}}"

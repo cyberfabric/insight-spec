@@ -1,0 +1,63 @@
+##
+## Insight umbrella — GitOps overlay.
+##
+## This file is consumed by deploy/gitops/insight-application.yaml via
+## ArgoCD multi-source `valueFiles`. It overrides ONLY the fields that
+## an ArgoCD-driven deployment needs to set differently from the chart
+## defaults (secrets, ingress, cluster-specific sizing).
+##
+## All other knobs (image tags, resources, auth patterns) are inherited
+## from charts/insight/values.yaml — one source of truth.
+##
+
+# ─────────────────────────────────────────────────────────────────
+# Infrastructure sizing for production
+# ─────────────────────────────────────────────────────────────────
+clickhouse:
+  persistence:
+    size: 20Gi
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: "4",  memory: 8Gi }
+
+mariadb:
+  primary:
+    persistence:
+      size: 10Gi
+
+# ─────────────────────────────────────────────────────────────────
+# OIDC via a pre-created Secret (do NOT inline secrets in Git).
+# Create insight-oidc in the insight namespace with keys:
+#   issuer, audience, clientId, redirectUri
+# Then ExternalSecrets / sealed-secrets / SOPS of your choice.
+# ─────────────────────────────────────────────────────────────────
+apiGateway:
+  authDisabled: false
+  oidc:
+    existingSecret: insight-oidc
+  ingress:
+    enabled: true
+    className: nginx
+    host: insight.example.com
+    tls:
+      enabled: true
+      secretName: insight-tls
+
+# Must match the public part of apiGateway.oidc.clientId.
+frontend:
+  oidc:
+    clientId: insight-frontend
+  ingress:
+    enabled: true
+    className: nginx
+    host: app.insight.example.com
+
+# ─────────────────────────────────────────────────────────────────
+# Analytics DB credentials via a pre-created Secret.
+# Create insight-clickhouse-creds in the insight namespace with
+# keys: username, password.
+# ─────────────────────────────────────────────────────────────────
+analyticsApi:
+  clickhouse:
+    credentialsSecret:
+      name: insight-clickhouse-creds

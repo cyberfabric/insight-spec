@@ -1,0 +1,32 @@
+{{/*
+Argo WorkflowTemplates for ingestion pipelines.
+
+These files live in files/ingestion/*.yaml and are emitted via .Files.Get
+so their Argo `{{inputs.parameters.foo}}` syntax does not clash with Helm
+templating.
+
+Dependency URLs (ClickHouse, Airbyte) are NOT hardcoded in the raw files —
+we use placeholders (`__CLICKHOUSE_FQDN__`, `__CLICKHOUSE_PORT__`,
+`__AIRBYTE_URL__`) and substitute them here using the resolution helpers.
+Any value that changes with release name / namespace / external-mode lives
+in the helpers; the raw files carry only the Argo logic.
+
+Submitters of CronWorkflow / Workflow can still override via
+arguments.parameters at runtime.
+
+The Argo controller must watch this namespace — see deploy/argo/values.yaml
+workflowNamespaces: [argo, insight].
+*/}}
+{{- if .Values.ingestion.templates.enabled }}
+{{- $chFqdn := include "insight.clickhouse.fqdn" . -}}
+{{- $chPort := include "insight.clickhouse.port" . -}}
+{{- $airbyteUrl := include "insight.airbyte.url" . -}}
+{{- range $path, $_ := .Files.Glob "files/ingestion/*.yaml" }}
+---
+{{- $content := $.Files.Get $path -}}
+{{- $content := $content | replace "__CLICKHOUSE_FQDN__" $chFqdn -}}
+{{- $content := $content | replace "__CLICKHOUSE_PORT__" $chPort -}}
+{{- $content := $content | replace "__AIRBYTE_URL__" $airbyteUrl }}
+{{ $content }}
+{{- end }}
+{{- end }}
