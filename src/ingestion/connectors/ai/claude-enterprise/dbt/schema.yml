@@ -41,7 +41,8 @@ models:
         description: "User email (user_email from Bronze, lowercased)"
         tests:
           - not_null
-      - name: person_id
+      - name: api_key_id
+        description: "Always NULL for Enterprise — engagement is attributed by email, not by API key"
       - name: workspace_id
         description: "NULL — Enterprise engagement is org-wide, not per workspace"
       - name: day

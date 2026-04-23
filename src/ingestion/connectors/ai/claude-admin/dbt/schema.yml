@@ -33,8 +33,15 @@ models:
           - not_null
           - unique
       - name: email
-        description: "Always NULL — programmatic API has no per-user attribution"
-      - name: person_id
+        description: >
+          Always NULL for this staging — API key authentication is not tied
+          to a user at request time. Per-user attribution is achieved in
+          Silver Step 2 (Identity Resolution) by treating api_key_id as an
+          identity key (when the org provisions one key per developer).
+      - name: api_key_id
+        description: >
+          Anthropic API key identifier. Primary identity proxy for Admin API
+          usage — mapped to person_id in Silver Step 2 via identity.aliases.
       - name: workspace_id
         description: "Anthropic workspace identifier (nullable)"
       - name: day
@@ -106,7 +113,6 @@ models:
         description: "User email (actor_identifier) — identity key"
         tests:
           - not_null
-      - name: person_id
       - name: day
         description: "Usage date (UTC)"
         tests:

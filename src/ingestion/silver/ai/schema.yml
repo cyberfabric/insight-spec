@@ -30,11 +30,9 @@ models:
           - not_null
           - unique
       - name: email
-        description: "Work email — identity key for Silver step 2 (person_id resolution)"
+        description: "Work email — identity key consumed by Silver Step 2 (Identity Resolution) to resolve person_id"
         tests:
           - not_null
-      - name: person_id
-        description: "Resolved in Silver step 2 via Identity Manager (NULL in step 1)"
       - name: day
         description: "Calendar date of usage (UTC)"
         tests:
@@ -133,11 +131,16 @@ models:
           - unique
       - name: email
         description: >
-          Work email. Nullable because programmatic API usage (channel='api')
-          cannot be attributed to individual users — the API key is the only
-          identifier Anthropic has at consumption time.
-      - name: person_id
-        description: "Resolved in Silver step 2 when email is present."
+          Work email. Nullable — programmatic API usage (channel='api') cannot
+          be attributed to a user at request time because API keys are the only
+          identifier Anthropic sees. Per-user attribution for such rows is
+          restored in Silver Step 2 (Identity Resolution) by mapping `api_key_id`
+          to `person_id` via identity.aliases — viable when the organisation
+          provisions one API key per developer (common practice).
+      - name: api_key_id
+        description: >
+          Anthropic API key identifier. Identity proxy for rows where `email`
+          is NULL (channel='api'). Resolved to person_id in Silver Step 2.
       - name: workspace_id
         description: "Anthropic workspace identifier. Used primarily for API rows (where email is NULL)."
       - name: day

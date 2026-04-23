@@ -64,7 +64,7 @@ web AS (
         concat(tenant_id, '-', source_id, '-', email, '-', toString(day), '-web')
                                                     AS unique_key,
         email,
-        CAST(NULL AS Nullable(UUID))                AS person_id,
+        CAST(NULL AS Nullable(String))              AS api_key_id,
         CAST(NULL AS Nullable(String))              AS workspace_id,
         day,
         'anthropic'                                 AS provider,
@@ -93,7 +93,7 @@ office AS (
         concat(tenant_id, '-', source_id, '-', email, '-', toString(day), '-office')
                                                     AS unique_key,
         email,
-        CAST(NULL AS Nullable(UUID))                AS person_id,
+        CAST(NULL AS Nullable(String))              AS api_key_id,
         CAST(NULL AS Nullable(String))              AS workspace_id,
         day,
         'anthropic'                                 AS provider,
@@ -123,7 +123,7 @@ cowork AS (
         concat(tenant_id, '-', source_id, '-', email, '-', toString(day), '-cowork')
                                                     AS unique_key,
         email,
-        CAST(NULL AS Nullable(UUID))                AS person_id,
+        CAST(NULL AS Nullable(String))              AS api_key_id,
         CAST(NULL AS Nullable(String))              AS workspace_id,
         day,
         'anthropic'                                 AS provider,

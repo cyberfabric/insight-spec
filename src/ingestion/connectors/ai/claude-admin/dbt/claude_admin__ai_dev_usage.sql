@@ -50,7 +50,6 @@ SELECT
     concat(tenant_id, '-', source_id, '-', email_lc, '-', toString(day))
                                                     AS unique_key,
     email_lc                                        AS email,
-    CAST(NULL AS Nullable(UUID))                    AS person_id,
     day,
     'claude_code'                                   AS tool,
     toUInt32(sessions_sum)                          AS session_count,

@@ -6,8 +6,11 @@
 --
 -- email is always NULL here: programmatic API calls authenticate via API keys
 -- and Anthropic cannot attribute consumption to individual users at request
--- time. Per-user attribution for Anthropic usage comes from Enterprise engagement
--- data (claude_enterprise_users.chat_*) via claude_enterprise__ai_api_usage.
+-- time. Per-user attribution comes via Silver Step 2 (Identity Resolution) by
+-- treating api_key_id as an identity key — when the organisation provisions
+-- one API key per developer (common practice), api_key_id → person_id is a
+-- clean 1:1 mapping. Fallback per-user attribution via Enterprise engagement
+-- (claude_enterprise_users.chat_*) in claude_enterprise__ai_api_usage.
 --
 -- channel = 'api' for all rows produced here.
 {{ config(
@@ -32,7 +35,7 @@ SELECT
         coalesce(context_window, '__null__')
     )                                               AS unique_key,
     CAST(NULL AS Nullable(String))                  AS email,
-    CAST(NULL AS Nullable(UUID))                    AS person_id,
+    api_key_id,
     workspace_id,
     toDate(date)                                    AS day,
     'anthropic'                                     AS provider,
