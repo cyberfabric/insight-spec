@@ -1,8 +1,11 @@
-//! MariaDB connection and migration runner.
+//! `MariaDB` connection and migration runner.
 
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
-/// Connect to MariaDB.
+/// Connect to `MariaDB`.
+///
+/// # Errors
+/// Returns an error if the database URL is invalid or the connection cannot be established.
 pub async fn connect(database_url: &str) -> anyhow::Result<DatabaseConnection> {
     let mut opts = ConnectOptions::new(database_url);
     opts.max_connections(10)
@@ -15,6 +18,9 @@ pub async fn connect(database_url: &str) -> anyhow::Result<DatabaseConnection> {
 }
 
 /// Run pending migrations.
+///
+/// # Errors
+/// Returns an error if any migration fails to apply.
 pub async fn run_migrations(db: &DatabaseConnection) -> anyhow::Result<()> {
     use sea_orm_migration::MigratorTrait;
     crate::migration::Migrator::up(db, None).await?;

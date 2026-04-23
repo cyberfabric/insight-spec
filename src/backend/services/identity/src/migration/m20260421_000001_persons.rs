@@ -1,4 +1,4 @@
-//! Initial schema for identity-resolution MariaDB tables:
+//! Initial schema for identity-resolution `MariaDB` tables:
 //!
 //! 1. `persons` -- identity-attribute history (SCD-style append-only).
 //! 2. `account_person_map` -- stable mapping of source-accounts to
@@ -8,14 +8,14 @@
 //!    (email). See ADR-0002.
 //!
 //! Column types mirror `analytics-api` conventions: `BINARY(16)` for
-//! UUIDs (SeaORM's `.uuid()` default on MariaDB), `TIMESTAMP` for
-//! wall-clock columns (stored internally as UTC by MariaDB). The one
+//! UUIDs (`SeaORM`'s `.uuid()` default on `MariaDB`), `TIMESTAMP` for
+//! wall-clock columns (stored internally as UTC by `MariaDB`). The one
 //! non-standard choice is `alias_value VARCHAR(512) COLLATE utf8mb4_bin`:
 //! identity observations are compared byte-wise for uniqueness, so
 //! "Foo@x.com" and "foo@x.com" are two distinct observations rather
 //! than colliding through case-insensitive collation.
 //!
-//! The schema is applied via raw DDL rather than the SeaORM DSL because
+//! The schema is applied via raw DDL rather than the `SeaORM` DSL because
 //! per-column `COLLATE utf8mb4_bin` on `alias_value` is not cleanly
 //! expressible through the DSL.
 
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS persons (
 ";
 
 /// `account_person_map` -- stable (tenant, source-instance, account) ->
-/// person_id mapping. Written once per account at first observation;
+/// `person_id` mapping. Written once per account at first observation;
 /// never updated, never re-derived. Guarantees `person_id` stability
 /// across re-seeds even when mutable attributes (email, name) change
 /// at the source.

@@ -1,7 +1,7 @@
 //! Identity Resolution -- entry point.
 //!
-//! Owns its MariaDB schema (the `identity` database) via an embedded
-//! SeaORM `Migrator`. On `run`, migrations are applied before serving;
+//! Owns its `MariaDB` schema (the `identity` database) via an embedded
+//! `SeaORM` `Migrator`. On `run`, migrations are applied before serving;
 //! the `migrate` subcommand runs them and exits (used as a helm init
 //! container). See ADR-0006 for the service-owned-migrations decision.
 

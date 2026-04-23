@@ -1,6 +1,6 @@
 //! Database migrations for the Identity Resolution service.
 //!
-//! The service owns its schema in the dedicated MariaDB database `identity`;
+//! The service owns its schema in the dedicated `MariaDB` database `identity`;
 //! migrations are applied at startup via `Migrator::up(db, None)`. See
 //! ADR-0006 for the service-owned-migrations decision.
 
