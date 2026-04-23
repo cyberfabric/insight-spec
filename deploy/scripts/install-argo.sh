@@ -6,8 +6,10 @@
 # WorkflowTemplates (airbyte-sync/dbt-run/ingestion-pipeline) are shipped
 # separately via the Insight umbrella chart — see values.ingestion.templates.enabled.
 #
+# All Insight components share a single namespace (see deploy/README.md).
+#
 # Environment overrides:
-#   ARGO_NAMESPACE     (default: argo)
+#   INSIGHT_NAMESPACE  (default: insight) — shared by all components
 #   ARGO_RELEASE       (default: argo-workflows)
 #   ARGO_VERSION       (default: 0.45.16)
 #   ARGO_VALUES        (default: deploy/argo/values.yaml)
@@ -23,7 +25,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-NAMESPACE="${ARGO_NAMESPACE:-argo}"
+NAMESPACE="${INSIGHT_NAMESPACE:-insight}"
 RELEASE="${ARGO_RELEASE:-argo-workflows}"
 VERSION="${ARGO_VERSION:-0.45.16}"
 VALUES="${ARGO_VALUES:-deploy/argo/values.yaml}"
@@ -50,25 +52,34 @@ if ! helm repo list 2>/dev/null | grep -q '^argo\s'; then
 fi
 helm repo update argo >/dev/null
 
-# ─── Pre-create namespaces (rbac.yaml references the 'insight' ns) ─────
-for ns in argo insight; do
-  kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-done
+# ─── Pre-create namespace ──────────────────────────────────────────────
+kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
 # ─── Install / upgrade ─────────────────────────────────────────────────
 VALUES_ARGS=(-f "$VALUES")
 [[ -n "$EXTRA" ]] && VALUES_ARGS+=(-f "$EXTRA")
 
 log "Running helm upgrade --install"
+# `controller.workflowNamespaces` and `controller.instanceID` are set via
+# --set so they track the release namespace. The chart values only carries
+# namespace-agnostic defaults.
 helm upgrade --install "$RELEASE" argo/argo-workflows \
   --namespace "$NAMESPACE" --create-namespace \
   --version "$VERSION" \
   "${VALUES_ARGS[@]}" \
+  --set "controller.workflowNamespaces[0]=$NAMESPACE" \
+  --set "controller.instanceID=$RELEASE-$NAMESPACE" \
   --wait --timeout 5m
 
 # ─── Apply supplemental RBAC ───────────────────────────────────────────
-log "Applying supplemental RBAC"
-kubectl apply -f "$RBAC"
+# rbac.yaml ships `${NAMESPACE}` / `${WORKFLOW_SA}` placeholders; we
+# substitute them with sed to target the release namespace without
+# requiring envsubst to be installed.
+log "Applying supplemental RBAC in $NAMESPACE"
+sed \
+  -e "s|\${NAMESPACE}|$NAMESPACE|g" \
+  -e "s|\${WORKFLOW_SA}|argo-workflow|g" \
+  "$RBAC" | kubectl apply -f -
 
 # ─── Summary ───────────────────────────────────────────────────────────
 cat <<EOF
@@ -81,9 +92,9 @@ Verify:
   # then open http://localhost:2746
 
 Insight WorkflowTemplates will be deployed by the umbrella chart
-(ingestion.templates.enabled=true) into the 'insight' namespace.
+(ingestion.templates.enabled=true) into the $NAMESPACE namespace.
 
 Next step:
-  ./deploy/scripts/install-insight.sh
+  INSIGHT_NAMESPACE=$NAMESPACE ./deploy/scripts/install-insight.sh
 
 EOF

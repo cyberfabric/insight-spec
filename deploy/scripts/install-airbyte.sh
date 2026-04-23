@@ -4,8 +4,13 @@
 #
 # Idempotent: re-running does `helm upgrade` with the same values.
 #
+# All Insight components (Airbyte, Argo Workflows, the umbrella) live in
+# the SAME namespace — see deploy/README.md for the single-namespace model.
+# Multiple Insight instances on the same cluster use different namespaces;
+# each is self-contained.
+#
 # Environment overrides:
-#   AIRBYTE_NAMESPACE  (default: airbyte)
+#   INSIGHT_NAMESPACE  (default: insight) — shared by all components
 #   AIRBYTE_RELEASE    (default: airbyte)
 #   AIRBYTE_VERSION    (default: 1.5.1)
 #   AIRBYTE_VALUES     (default: deploy/airbyte/values.yaml)
@@ -20,7 +25,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-NAMESPACE="${AIRBYTE_NAMESPACE:-airbyte}"
+NAMESPACE="${INSIGHT_NAMESPACE:-insight}"
 RELEASE="${AIRBYTE_RELEASE:-airbyte}"
 VERSION="${AIRBYTE_VERSION:-1.5.1}"
 VALUES="${AIRBYTE_VALUES:-deploy/airbyte/values.yaml}"
@@ -56,39 +61,17 @@ helm upgrade --install "$RELEASE" airbyte/airbyte \
   "${VALUES_ARGS[@]}" \
   --wait --timeout 15m
 
-# ─── JWT secret mirror ─────────────────────────────────────────────────
-# Ingestion WorkflowTemplates run in the `insight` namespace and sign
-# JWTs for the Airbyte API. We mirror airbyte-auth-secrets from the
-# airbyte namespace into the insight namespace under the SAME name/key
-# (jwt-signature-secret) — those are the name and key the Airbyte chart
-# creates and which the workflow templates hardcode.
-#
-# Idempotent: re-created on every run (the secret may rotate between
-# Airbyte versions).
-log "Mirroring Airbyte auth secret to Insight namespace"
-INSIGHT_NS="${INSIGHT_NAMESPACE:-insight}"
-kubectl create namespace "$INSIGHT_NS" --dry-run=client -o yaml | kubectl apply -f -
-
+# ─── JWT secret ────────────────────────────────────────────────────────
+# airbyte-auth-secrets / jwt-signature-secret is created by the Airbyte
+# chart in the release namespace. Since Insight components live in the
+# SAME namespace, no cross-namespace mirror is needed — the ingestion
+# WorkflowTemplates reference the secret directly.
 if kubectl -n "$NAMESPACE" get secret airbyte-auth-secrets >/dev/null 2>&1; then
-  JWT_B64=$(kubectl -n "$NAMESPACE" get secret airbyte-auth-secrets \
-    -o jsonpath='{.data.jwt-signature-secret}' 2>/dev/null)
-  if [[ -n "$JWT_B64" ]]; then
-    kubectl -n "$INSIGHT_NS" apply -f - <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: airbyte-auth-secrets
-type: Opaque
-data:
-  jwt-signature-secret: $JWT_B64
-EOF
-    log "Mirrored: $INSIGHT_NS/airbyte-auth-secrets"
-  else
-    log "WARNING: jwt-signature-secret key missing in airbyte-auth-secrets"
-  fi
+  log "Verified: $NAMESPACE/airbyte-auth-secrets (Insight workflows will use it)"
 else
-  log "WARNING: airbyte-auth-secrets not found in airbyte namespace yet."
-  log "         Rerun this script after Airbyte finishes booting."
+  log "WARNING: airbyte-auth-secrets not yet present in $NAMESPACE."
+  log "         It is created by the Airbyte chart on first boot; rerun"
+  log "         this script after Airbyte finishes starting."
 fi
 
 # ─── Summary ───────────────────────────────────────────────────────────
@@ -104,9 +87,9 @@ Verify:
 API reachable at:
   http://$RELEASE-airbyte-server-svc.$NAMESPACE.svc.cluster.local:8001
 
-Insight will use JWT secret: $INSIGHT_NS/airbyte-auth-secrets (key: jwt-signature-secret)
+Insight will use JWT secret: $NAMESPACE/airbyte-auth-secrets (key: jwt-signature-secret)
 
 Next step:
-  ./deploy/scripts/install-insight.sh
+  INSIGHT_NAMESPACE=$NAMESPACE ./deploy/scripts/install-insight.sh
 
 EOF

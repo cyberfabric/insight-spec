@@ -120,6 +120,28 @@ http://{{ include "insight.clickhouse.host" . }}:{{ include "insight.clickhouse.
 redis://{{ include "insight.redis.host" . }}:{{ include "insight.redis.port" . }}
 {{- end -}}
 
+{{/*
+==============================================================================
+ AIRBYTE (separate release, SAME namespace)
+==============================================================================
+Airbyte is installed as its own Helm release into the same namespace as the
+umbrella (single-namespace deployment model). The DNS is therefore:
+
+  {airbyte-release-name}-airbyte-server-svc.{release-namespace}.svc.cluster.local:8001
+
+If `airbyte.apiUrl` is set explicitly in values, that value wins — useful
+for Constructor Platform integration where the platform provides Airbyte
+externally.
+==============================================================================
+*/}}
+{{- define "insight.airbyte.url" -}}
+{{- if .Values.airbyte.apiUrl -}}
+{{- .Values.airbyte.apiUrl -}}
+{{- else -}}
+http://{{ .Values.airbyte.releaseName }}-airbyte-server-svc.{{ .Release.Namespace }}.svc.cluster.local:8001
+{{- end -}}
+{{- end -}}
+
 {{/* ---------- Redpanda ---------- */}}
 {{- define "insight.redpanda.brokers" -}}
 {{- if .Values.redpanda.enabled -}}

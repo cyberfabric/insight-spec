@@ -33,6 +33,14 @@ spec:
         releaseName: argo-workflows
         valueFiles:
           - $values/deploy/argo/values.yaml
+        # workflowNamespaces and instanceID are set at runtime so they
+        # track the release namespace (single-namespace deployment model,
+        # multi-tenant safe on shared clusters).
+        parameters:
+          - name: controller.workflowNamespaces[0]
+            value: insight
+          - name: controller.instanceID
+            value: argo-workflows-insight
 
     - repoURL: https://github.com/cyberfabric/insight.git
       targetRevision: main
@@ -40,7 +48,7 @@ spec:
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: argo
+    namespace: insight
 
   syncPolicy:
     automated:

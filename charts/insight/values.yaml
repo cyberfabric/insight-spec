@@ -56,12 +56,22 @@ global:
     allowInsecureImages: true
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  EXTERNAL — Airbyte (installed as a separate Helm release)
+#  EXTERNAL — Airbyte (installed as a separate Helm release, SAME namespace)
 # ═══════════════════════════════════════════════════════════════════════════
+#
+# Single-namespace model: Airbyte, Argo Workflows, and the umbrella all
+# live in the release namespace. The Airbyte URL is computed from
+# `airbyte.releaseName` + `.Release.Namespace` (see templates/_helpers.tpl
+# → insight.airbyte.url).
+#
+# For Constructor Platform integration, set `apiUrl` explicitly to point
+# at the platform's externally-managed Airbyte.
+#
 airbyte:
-  apiUrl: "http://airbyte-airbyte-server-svc.airbyte.svc.cluster.local:8001"
+  releaseName: airbyte             # Helm release name used by install-airbyte.sh
+  apiUrl: ""                       # "" = compute from releaseName + namespace
   jwtSecret:
-    name: airbyte-auth-secrets       # mirrored by install-airbyte.sh
+    name: airbyte-auth-secrets     # created by the Airbyte chart
     key:  jwt-signature-secret
 
 # ═══════════════════════════════════════════════════════════════════════════

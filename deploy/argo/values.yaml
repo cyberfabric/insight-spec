@@ -21,13 +21,14 @@ server:
     limits:   { cpu: 500m, memory: 256Mi }
 
 controller:
-  # Namespaces that the controller watches for Workflow resources.
-  # 'argo'    — for system workflows.
-  # 'insight' — so the umbrella can create CronWorkflow in its own namespace
-  #             and the controller picks them up.
-  workflowNamespaces:
-    - argo
-    - insight
+  # The controller watches Workflow resources only in the release namespace.
+  # `workflowNamespaces` and `instanceID` are set by install-argo.sh at
+  # deploy time so they track the INSIGHT_NAMESPACE (single-namespace
+  # model: Airbyte, Argo, umbrella — all in one ns).
+  #
+  # instanceID scopes workflows to this controller, so a second Insight
+  # install in another namespace on the same cluster does not accidentally
+  # pick up our workflows and vice versa.
   resources:
     requests: { cpu: 200m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }

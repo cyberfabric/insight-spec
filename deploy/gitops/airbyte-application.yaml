@@ -46,7 +46,7 @@ spec:
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: airbyte
+    namespace: insight
 
   syncPolicy:
     automated:

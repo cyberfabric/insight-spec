@@ -20,7 +20,7 @@ workflowNamespaces: [argo, insight].
 {{- if .Values.ingestion.templates.enabled }}
 {{- $chFqdn := include "insight.clickhouse.fqdn" . -}}
 {{- $chPort := include "insight.clickhouse.port" . -}}
-{{- $airbyteUrl := .Values.airbyte.apiUrl -}}
+{{- $airbyteUrl := include "insight.airbyte.url" . -}}
 {{- range $path, $_ := .Files.Glob "files/ingestion/*.yaml" }}
 ---
 {{- $content := $.Files.Get $path -}}

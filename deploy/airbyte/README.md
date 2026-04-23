@@ -1,13 +1,22 @@
 # Airbyte installation for Insight
 
-Airbyte is installed as a **standalone Helm release** in its own namespace `airbyte`. The Insight umbrella chart only knows about its URL and credentials — see the `airbyte:` block in [`charts/insight/values.yaml`](../../charts/insight/values.yaml).
+Airbyte is installed as a **standalone Helm release** in the **same namespace** as the rest of Insight (default: `insight`). Multiple Insight instances on the same cluster live in different namespaces — each is fully self-contained.
 
-## Why separate
+The umbrella chart only knows the Airbyte API URL and credentials. See the `airbyte:` block in [`charts/insight/values.yaml`](../../charts/insight/values.yaml).
+
+## Why separate Helm release
 
 See the architecture notes for the full discussion. In short:
-- Airbyte is heavy (10+ pods) and its release cadence does not match Insight's
-- `helm upgrade` on the umbrella must not reinstall Airbyte every time
-- Compatibility matrix: Insight X.Y supports Airbyte 1.4.x–1.6.x — the coupling is loose
+- Airbyte is heavy (10+ pods) and its release cadence does not match Insight's.
+- `helm upgrade` on the umbrella must not reinstall Airbyte every time.
+- Compatibility matrix: Insight X.Y supports Airbyte 1.4.x–1.6.x — the coupling is loose.
+
+## Single-namespace model
+
+All Insight components (Airbyte, Argo Workflows, the umbrella) live in one namespace (default `insight`). Benefits:
+- No cross-namespace service DNS, no secret mirroring.
+- Multiple Insight installs on a shared cluster simply use different namespaces.
+- `controller.instanceID` on Argo scopes workflows to the matching Insight install, so two tenants on the same cluster never pick up each other's workflows.
 
 ## Pinned version
 
@@ -29,23 +38,25 @@ Or manually:
 helm repo add airbyte https://airbytehq.github.io/helm-charts
 helm repo update
 helm upgrade --install airbyte airbyte/airbyte \
-  --namespace airbyte --create-namespace \
+  --namespace insight --create-namespace \
   --version 1.5.1 \
   -f deploy/airbyte/values.yaml \
   --wait --timeout 15m
 ```
+
+Override the namespace with `INSIGHT_NAMESPACE=...` (for example, when running multiple tenants on the same cluster).
 
 ## Install (production)
 
 1. Provision external resources:
    - managed Postgres (RDS / CloudSQL / on-prem) for Airbyte state
    - S3-compatible bucket for logs + state
-2. Create Secrets in namespace `airbyte`:
+2. Create Secrets in the Insight namespace:
    ```bash
-   kubectl create namespace airbyte
-   kubectl -n airbyte create secret generic airbyte-db-secret \
+   kubectl create namespace insight
+   kubectl -n insight create secret generic airbyte-db-secret \
      --from-literal=password='...'
-   kubectl -n airbyte create secret generic airbyte-s3-creds \
+   kubectl -n insight create secret generic airbyte-s3-creds \
      --from-literal=AWS_ACCESS_KEY_ID='...' \
      --from-literal=AWS_SECRET_ACCESS_KEY='...'
    ```
@@ -53,7 +64,7 @@ helm upgrade --install airbyte airbyte/airbyte \
 4. Install:
    ```bash
    helm upgrade --install airbyte airbyte/airbyte \
-     --namespace airbyte --create-namespace \
+     --namespace insight --create-namespace \
      --version 1.5.1 \
      -f deploy/airbyte/values.yaml \
      -f deploy/airbyte/values-prod.yaml \
@@ -64,39 +75,35 @@ helm upgrade --install airbyte airbyte/airbyte \
 
 ```bash
 # Wait for all pods to be ready
-kubectl -n airbyte get pods -w
+kubectl -n insight get pods -l app.kubernetes.io/name=airbyte-server -w
 
 # UI via port-forward
-kubectl -n airbyte port-forward svc/airbyte-airbyte-webapp-svc 8080:80
+kubectl -n insight port-forward svc/airbyte-airbyte-webapp-svc 8080:80
 # → http://localhost:8080
 
 # API reachable
-kubectl -n airbyte port-forward svc/airbyte-airbyte-server-svc 8001:8001
+kubectl -n insight port-forward svc/airbyte-airbyte-server-svc 8001:8001
 curl http://localhost:8001/api/v1/health
 ```
 
 ## Integration with Insight
 
-Insight reaches Airbyte via DNS:
+Insight reaches Airbyte via in-namespace DNS (default release name `airbyte`, default namespace `insight`):
 ```
-http://airbyte-airbyte-server-svc.airbyte.svc.cluster.local:8001
+http://airbyte-airbyte-server-svc.insight.svc.cluster.local:8001
 ```
 
-These values are already wired into:
+This URL is computed by the umbrella's `insight.airbyte.url` helper from `airbyte.releaseName` + `.Release.Namespace`, so changing the release name or namespace propagates automatically. It appears in:
 - [`src/ingestion/airbyte-toolkit/lib/env.sh`](../../src/ingestion/airbyte-toolkit/lib/env.sh) → `AIRBYTE_API`
-- [`charts/insight/files/ingestion/airbyte-sync.yaml`](../../charts/insight/files/ingestion/airbyte-sync.yaml) → default arg
-- [`charts/insight/values.yaml`](../../charts/insight/values.yaml) → `airbyte.apiUrl`
+- [`charts/insight/files/ingestion/airbyte-sync.yaml`](../../charts/insight/files/ingestion/airbyte-sync.yaml) → default arg (via placeholder)
+- [`charts/insight/values.yaml`](../../charts/insight/values.yaml) → `airbyte.apiUrl` (empty = compute from helpers)
 
-**Auth**: the bearer token is a server-signed JWT signed with `AB_JWT_SIGNATURE_SECRET` from the `airbyte-server` pod. See `env.sh` for a ready-made node.js signer. This secret is created automatically by the Airbyte chart; Insight needs to:
-1. Read it from the airbyte namespace (RBAC + `kubectl get secret`)
-2. Mirror it to the Insight namespace as `airbyte-auth-secrets`
-
-Done once at install time — see [`install-airbyte.sh`](../scripts/install-airbyte.sh).
+**Auth**: the bearer token is a server-signed JWT signed with `AB_JWT_SIGNATURE_SECRET` from the `airbyte-server` pod. The Airbyte chart creates `airbyte-auth-secrets` in the release namespace; because Insight shares that namespace, no cross-namespace mirror is needed — the workflow templates reference the secret directly.
 
 ## Uninstall
 
 ```bash
-helm -n airbyte uninstall airbyte
-kubectl delete namespace airbyte
-# PVCs are removed with the namespace
+helm -n insight uninstall airbyte
+# Then remove any Airbyte PVCs (each release leaves its own)
+kubectl -n insight get pvc -l app.kubernetes.io/part-of=airbyte -o name | xargs -r kubectl -n insight delete
 ```

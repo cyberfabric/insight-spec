@@ -1,8 +1,15 @@
 # GitOps deployment (ArgoCD)
 
-For enterprise customers whose stack already runs on ArgoCD. Four `Application` manifests with sync-wave ordering, all consuming the same `deploy/<component>/values.yaml` files used by the imperative installers — no inline values to drift.
+For enterprise customers whose stack already runs on ArgoCD. Four `Application` manifests deploy the entire stack into **one namespace** (`insight` by default), with sync-wave ordering so Airbyte + Argo are Healthy before Insight starts rolling out.
 
 **Model**: Git is the source of truth; ArgoCD watches the repo and reconciles. Upgrading a version = a commit to that repo.
+
+## Single-namespace model
+
+All Insight components live in one namespace (default `insight`):
+- Multiple Insight installs on a shared cluster → different namespaces, each fully self-contained.
+- `controller.instanceID` on Argo scopes workflows to the matching install, so tenants don't pick up each other's workflows.
+- No cross-namespace DNS, no secret mirroring.
 
 ## Prerequisites
 
@@ -18,10 +25,10 @@ For enterprise customers whose stack already runs on ArgoCD. Four `Application` 
 
 | File | Purpose |
 |------|---------|
-| [`airbyte-application.yaml`](./airbyte-application.yaml) | Airbyte chart. Sync wave 0. |
-| [`argo-application.yaml`](./argo-application.yaml) | Argo Workflows chart. Sync wave 0. |
-| [`argo-rbac-application.yaml`](./argo-rbac-application.yaml) | Supplemental Argo RBAC (`argo-workflow-executor` Role/Binding in `argo` and `insight` namespaces). Sync wave 0. |
-| [`insight-application.yaml`](./insight-application.yaml) | Insight umbrella. Sync wave 1. |
+| [`airbyte-application.yaml`](./airbyte-application.yaml) | Airbyte chart. Sync wave 0. Destination namespace `insight`. |
+| [`argo-application.yaml`](./argo-application.yaml) | Argo Workflows chart. Sync wave 0. Destination namespace `insight`. Sets `controller.workflowNamespaces=[insight]` and `controller.instanceID` via Helm parameters. |
+| [`argo-rbac-application.yaml`](./argo-rbac-application.yaml) | Supplemental Argo RBAC (`argo-workflow-executor` Role/Binding). Sync wave 0. Uses the pre-rendered [`rbac-insight.yaml`](../argo/rbac-insight.yaml). |
+| [`insight-application.yaml`](./insight-application.yaml) | Insight umbrella. Sync wave 1. Destination namespace `insight`. |
 | [`insight-values.yaml`](./insight-values.yaml) | GitOps overlay for Insight — minimal overrides on top of the chart defaults. |
 | [`root-app.yaml`](./root-app.yaml) | App-of-Apps: one entry point that manages the four above. |
 
@@ -43,7 +50,7 @@ kubectl apply -f deploy/gitops/argo-rbac-application.yaml
 kubectl apply -f deploy/gitops/insight-application.yaml
 ```
 
-ArgoCD brings up Airbyte + Argo + Argo RBAC (wave 0), waits for them to become Healthy, then deploys Insight (wave 1).
+ArgoCD brings up Airbyte + Argo + Argo RBAC (wave 0), waits for them to become Healthy, then deploys Insight (wave 1) — all into namespace `insight`.
 
 ## App-of-Apps pattern
 
@@ -55,13 +62,14 @@ kubectl apply -f deploy/gitops/root-app.yaml
 
 Benefit: the customer applies ONE manifest and everything else is reconciled from Git.
 
-## Customization
+## Different target namespace
 
-Fork this repo and edit:
-- `deploy/airbyte/values.yaml` / `deploy/argo/values.yaml` — for infra overrides
-- `deploy/gitops/insight-values.yaml` — for Insight umbrella overrides (ingress, OIDC, sizing)
+The shipped manifests hardcode `insight` for simplicity. To target a different namespace (for multi-tenant deployments):
 
-Then point the `sources[].repoURL` entries of each Application at your fork.
+1. Fork this repo.
+2. Search-and-replace `namespace: insight` (and the `controller.workflowNamespaces[0]=insight`, `controller.instanceID=...` parameters in `argo-application.yaml`) to your chosen namespace.
+3. Render a matching `rbac-<ns>.yaml` from `deploy/argo/rbac.yaml` and update `argo-rbac-application.yaml` to reference it.
+4. Point each Application's `sources[].repoURL` at your fork.
 
 ## Upgrade flow
 

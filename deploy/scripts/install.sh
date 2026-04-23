@@ -42,13 +42,14 @@ else
   "$ROOT_DIR/install-insight.sh"
 fi
 
-cat <<'EOF'
+NS="${INSIGHT_NAMESPACE:-insight}"
+cat <<EOF
 
 ╔════════════════════════════════════════════════════════════════════════╗
 ║   All done.                                                            ║
 ║                                                                        ║
-║   Airbyte UI:    kubectl -n airbyte  port-forward svc/airbyte-airbyte-webapp-svc 8080:80
-║   Insight UI:    kubectl -n insight  port-forward svc/insight-frontend 8081:80
+║   Airbyte UI:    kubectl -n $NS port-forward svc/airbyte-airbyte-webapp-svc 8080:80
+║   Insight UI:    kubectl -n $NS port-forward svc/insight-frontend 8081:80
 ║                                                                        ║
 ║   Open http://localhost:8081 in your browser.                          ║
 ╚════════════════════════════════════════════════════════════════════════╝

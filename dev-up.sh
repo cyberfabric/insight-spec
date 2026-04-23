@@ -340,7 +340,7 @@ esac
 if [[ "$CLUSTER_MODE" == "local" && ("$COMPONENT" == "all" || "$COMPONENT" == "ingestion") ]]; then
   echo "=== Starting Airbyte port-forward ==="
   pkill -f 'port-forward.*airbyte' 2>/dev/null || true
-  kubectl -n airbyte port-forward svc/airbyte-airbyte-server-svc 8001:8001 >/dev/null 2>&1 &
+  kubectl -n "$NAMESPACE" port-forward svc/airbyte-airbyte-server-svc 8001:8001 >/dev/null 2>&1 &
 fi
 
 # ─── Summary ──────────────────────────────────────────────────────────────
@@ -356,10 +356,10 @@ if [[ "$CLUSTER_MODE" == "local" ]]; then
 else
   echo "  Access via VPN-reachable node IP on port ${INGRESS_HTTP_PORT}"
 fi
-if kubectl get secret airbyte-auth-secrets -n airbyte &>/dev/null; then
+if kubectl get secret airbyte-auth-secrets -n "$NAMESPACE" &>/dev/null; then
   echo ""
   echo "  Airbyte UI login:"
   echo "    Email:    admin@example.com"
-  echo "    Password: kubectl get secret airbyte-auth-secrets -n airbyte -o jsonpath='{.data.instance-admin-password}' | base64 -d"
+  echo "    Password: kubectl get secret airbyte-auth-secrets -n $NAMESPACE -o jsonpath='{.data.instance-admin-password}' | base64 -d"
 fi
 echo "═══════════════════════════════════════════════════════════════"

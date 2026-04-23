@@ -63,10 +63,11 @@ log "Cluster: $(kubectl config current-context)"
 log "Namespace: $NAMESPACE · Release: $RELEASE · Chart: $CHART_REF@$VERSION"
 
 # ─── Check Airbyte is reachable (warning only) ─────────────────────────
-if ! kubectl -n airbyte get svc airbyte-airbyte-server-svc >/dev/null 2>&1; then
-  log "WARNING: Airbyte not detected in the 'airbyte' namespace."
+# Single-namespace model: Airbyte lives in the same namespace as Insight.
+if ! kubectl -n "$NAMESPACE" get svc airbyte-airbyte-server-svc >/dev/null 2>&1; then
+  log "WARNING: Airbyte not detected in the '$NAMESPACE' namespace."
   log "         Ingestion workflows will fail until Airbyte is installed."
-  log "         Run: ./deploy/scripts/install-airbyte.sh"
+  log "         Run: INSIGHT_NAMESPACE=$NAMESPACE ./deploy/scripts/install-airbyte.sh"
 fi
 
 # ─── Install / upgrade ─────────────────────────────────────────────────

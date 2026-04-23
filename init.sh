@@ -79,11 +79,12 @@ echo "    API:        http://localhost:8000/api/v1"
 echo "    Airbyte:    http://localhost:8001"
 echo "    Argo UI:    http://localhost:30500"
 echo "    ClickHouse: http://localhost:30123"
-if kubectl get secret airbyte-auth-secrets -n airbyte &>/dev/null; then
+NAMESPACE="${INSIGHT_NAMESPACE:-insight}"
+if kubectl get secret airbyte-auth-secrets -n "$NAMESPACE" &>/dev/null; then
   echo ""
   echo "  Airbyte UI login:"
   echo "    Email:    admin@example.com"
-  echo "    Password: kubectl get secret airbyte-auth-secrets -n airbyte -o jsonpath='{.data.instance-admin-password}' | base64 -d"
+  echo "    Password: kubectl get secret airbyte-auth-secrets -n $NAMESPACE -o jsonpath='{.data.instance-admin-password}' | base64 -d"
 fi
 echo ""
 echo "  Run a sync:"
