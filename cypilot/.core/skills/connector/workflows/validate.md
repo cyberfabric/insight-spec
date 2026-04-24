@@ -7,7 +7,54 @@ description: "Validate an Insight Connector package against spec"
 
 Checks that a connector package meets all requirements from the connector spec.
 
-## Checklist
+## Step 1: Automated structural validation (MANDATORY)
+
+Before the checklist review, always run the automated validators:
+
+```bash
+./src/ingestion/tools/declarative-connector/source.sh validate-strict <category>/<name>
+./src/ingestion/tools/declarative-connector/source.sh validate        <category>/<name>
+```
+
+- `validate-strict` — runs the Airbyte Builder UI JSON-schema check (no `$ref` resolution). This is the definitive compat test for the Builder UI. Must exit 0.
+- `validate` — runs the CDK loader check (resolves `$ref` first). Lenient; must also exit 0.
+
+If either fails, fix the reported per-path errors before proceeding with the checklist. See `src/ingestion/tools/declarative-connector/README.md` §"Debugging strict-validation errors".
+
+## Step 2: Builder-UI compatibility checklist (manifest-only)
+
+If `validate-strict` passed, these are already satisfied automatically — but eyeball them when reviewing a PR to catch intent mistakes:
+
+- [ ] No whole-object `$ref` to `#/definitions/<X>` or `#/streams/<N>`. Only leaf-field `$ref` into `#/definitions/linked/<Component>/<field>` is allowed.
+- [ ] Every `AddFields.fields[]` item has `type: AddedFieldDefinition`.
+- [ ] `OffsetIncrement.page_size` and `CursorPagination.page_size` are literal integers (not templates).
+- [ ] `concurrency_level.default_concurrency` is a literal integer.
+- [ ] Schema `$schema` is `http://json-schema.org/schema#` (not draft-07).
+- [ ] Schema type arrays are `[type, "null"]`, not `["null", type]`.
+- [ ] `check` block is present and placed BEFORE `definitions`.
+- [ ] `version`, `type: DeclarativeSource`, `concurrency_level`, `metadata.autoImportSchema` present.
+- [ ] Did NOT copy from `task-tracking/jira` (jira uses whole-object `$ref`; it is a known anti-template).
+
+## Step 2b: Runtime-only pitfalls (checked by per-stream `read`, MANDATORY)
+
+`validate-strict` does not catch these — only a live `read` against a real tenant does. Fail the connector review if any of these are present:
+
+- [ ] `DatetimeBasedCursor` with `step` also has matching `cursor_granularity`. Missing `cursor_granularity` → CDK raises `ValueError: If step is defined, cursor_granularity should be as well`.
+- [ ] No `format_datetime(...)` call inside an `AddedFieldDefinition.value` used as a cursor source. That Jinja expression may not render, leaving the literal template as the cursor value. Use native `%ms` / `%s` / `%s_as_float` / `%epoch_microseconds` in `cursor_datetime_formats` to parse epoch values directly from the source field.
+- [ ] Every `record.get('X', {}).get('Y')` chain is replaced with `(record.get('X') or {}).get('Y')`. The `.get(key, default)` default only applies when the key is **missing**; it does NOT apply when the key is present with `null` value, and `None.get(...)` crashes the whole slice.
+- [ ] Source API query syntax has been verified against a real tenant via `source.sh check`. YouTrack, Jira JQL, Salesforce SOQL each have distinct datetime and operator dialects — template substitution can produce syntactically valid but semantically wrong queries that `validate-strict` cannot detect.
+
+## Step 2c: Per-stream `read` smoke test (MANDATORY)
+
+Run the per-stream `read` loop from `connector-create.md` §5.6 and verify, for every stream:
+
+- [ ] Record count > 0 (unless the source truly has no data).
+- [ ] Error count = 0 (any `ERROR` / `FATAL` in the log is a blocker).
+- [ ] Every emitted record contains `tenant_id`, `source_id`, `unique_key`.
+- [ ] For incremental streams, a second consecutive `read` (without state reset) returns a strict subset of records — confirms the cursor is advancing.
+- [ ] For substreams, parent-ids on child records resolve to records emitted by the parent stream.
+
+## Step 3: Spec-level checklist
 
 Read connector package files and verify each item:
 
