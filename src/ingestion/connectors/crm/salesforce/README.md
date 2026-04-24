@@ -67,7 +67,7 @@ cp src/ingestion/secrets/connectors/salesforce.yaml.example src/ingestion/secret
 
 ## Streams
 
-Active 10 sobjects (capped for analytics value vs sync cost). Operator can
+Active: 10 sobjects (curated for analytics value vs sync cost). Operator can
 override via `salesforce_streams` config; additional disabled sobjects listed
 at the bottom of `constants.CRM_STREAMS` can be re-enabled there or supplied
 ad-hoc via config.

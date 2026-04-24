@@ -289,17 +289,6 @@ class SourceSalesforce(ConcurrentSourceAdapter):
                 kwargs["parent"] = parent_class(**parent_kwargs)
 
             stream = stream_class(**kwargs)
-
-            api_type = self._get_api_type(
-                stream_name, json_schema, config.get("salesforce_force_use_bulk_api", False)
-            )
-            if api_type == "rest" and not stream.primary_key and stream.too_many_properties:
-                logger.warning(
-                    f"Can not instantiate stream {stream_name}. It is not supported by the BULK API and can not be "
-                    "implemented via REST because the number of its properties exceeds the limit and it lacks a primary key."
-                )
-                continue
-
             streams.append(self._wrap_for_concurrency(config, stream, state_manager))
         # The Describe meta-stream from upstream is intentionally omitted —
         # Bronze already captures per-field metadata via the generated schema,
@@ -423,12 +412,11 @@ class SourceSalesforce(ConcurrentSourceAdapter):
                 response.status_code == codes.FORBIDDEN
                 and error_code == "REQUEST_LIMIT_EXCEEDED"
             ):
+                # 24h rolling quota reached — surface as a hard HTTPError so
+                # orchestration treats the sync as failed and alerts/retries.
                 logger.warning(
                     "API call %s hit rate limit: %r", response.url, message
                 )
-                # 24h rolling quota reached — surface as a hard HTTPError so
-                # orchestration treats the sync as failed and alerts/retries.
-                raise
             raise
 
 

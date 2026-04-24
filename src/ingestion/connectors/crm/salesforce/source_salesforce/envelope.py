@@ -7,6 +7,7 @@ blob so the Bronze schema stays stable across orgs with different SF
 customizations.
 """
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -75,18 +76,22 @@ def envelope(
     if not sf_id:
         # Every SF sobject we sync has an Id; an empty Id means either a
         # malformed response or a query shape (aggregate / GROUP BY) we
-        # shouldn't be running. Emit null unique_key so dedup doesn't collapse
-        # distinct rows onto one ``{tenant}-{source}-`` key.
+        # shouldn't be running. Bronze uses ReplacingMergeTree(_version)
+        # ordered by unique_key with allow_nullable_key=1 — NULL keys would
+        # still collide and collapse on merge. Derive a stable content hash
+        # so malformed rows stay distinct across the merge.
         logger.error(
-            "SF record missing Id; unique_key set to null (tenant=%s source=%s record_keys=%s)",
+            "SF record missing Id; unique_key derived from content hash (tenant=%s source=%s record_keys=%s)",
             tenant_id,
             source_id,
             list(record.keys())[:10],
         )
+        canonical = json.dumps(record, sort_keys=True, default=str)
+        sf_id = f"nohash:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()[:16]}"
 
     out["tenant_id"] = tenant_id
     out["source_id"] = source_id
-    out["unique_key"] = f"{tenant_id}-{source_id}-{sf_id}" if sf_id else None
+    out["unique_key"] = f"{tenant_id}-{source_id}-{sf_id}"
     out["data_source"] = DATA_SOURCE
     out["collected_at"] = _now_iso()
     return out
@@ -95,8 +100,7 @@ def envelope(
 ENVELOPE_FIELDS_SCHEMA = {
     "tenant_id": {"type": "string"},
     "source_id": {"type": "string"},
-    # null when the source record has no Id (malformed response).
-    "unique_key": {"type": ["string", "null"]},
+    "unique_key": {"type": "string"},
     "data_source": {"type": "string"},
     "collected_at": {"type": "string", "format": "date-time"},
     "custom_fields": {"type": "string"},

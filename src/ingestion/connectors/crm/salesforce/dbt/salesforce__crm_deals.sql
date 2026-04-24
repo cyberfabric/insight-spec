@@ -30,11 +30,11 @@ SELECT * FROM (
         Probability                                     AS probability,
         toJSONString(map(
             'Type',      coalesce(toString(Type), ''),
-            'IsDeleted', toString(coalesce(IsDeleted, false))
+            'IsDeleted', if(coalesce(IsDeleted, false), 'true', 'false')
         ))                                              AS metadata,
         custom_fields,
-        parseDateTimeBestEffort(CreatedDate)            AS created_at,
-        parseDateTimeBestEffort(LastModifiedDate)       AS updated_at,
+        parseDateTime64BestEffortOrNull(CreatedDate, 3)      AS created_at,
+        parseDateTime64BestEffortOrNull(LastModifiedDate, 3) AS updated_at,
         data_source,
         toUnixTimestamp64Milli(
             parseDateTime64BestEffort(SystemModstamp)

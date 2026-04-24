@@ -15,7 +15,7 @@ SELECT * FROM (
         unique_key,
         Id                                              AS account_id,
         Name                                            AS name,
-        Website                                         AS domain,
+        domain(Website)                                 AS domain,
         Industry                                        AS industry,
         OwnerId                                         AS owner_id,
         ParentId                                        AS parent_account_id,

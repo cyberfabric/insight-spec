@@ -76,11 +76,7 @@ from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 from source_salesforce.api import Salesforce, SalesforceTokenProvider
 from source_salesforce.availability_strategy import SalesforceAvailabilityStrategy
 from source_salesforce.constants import PARENT_SALESFORCE_OBJECTS, UNSUPPORTED_FILTERING_STREAMS
-from source_salesforce.envelope import ENVELOPE_FIELDS_SCHEMA, envelope, inject_envelope_properties
-
-# Envelope field names are injected post-hoc by envelope() and must NOT appear
-# in SOQL SELECT — SF rejects unknown columns with "No such column ...".
-_ENVELOPE_KEYS = frozenset(ENVELOPE_FIELDS_SCHEMA.keys())
+from source_salesforce.envelope import envelope, inject_envelope_properties
 from source_salesforce.exceptions import BulkNotSupportedException
 from source_salesforce.rate_limiting import (
     SalesforceErrorHandler,
@@ -141,7 +137,11 @@ class SalesforceStream(HttpStream, ABC):
             self.stream_name,
             self.logger,
             session=self._http_client._session,  # no need to specific api_budget and authenticator as HttpStream sets them in self._session
-            error_handler=SalesforceErrorHandler(stream_name=self.stream_name, sobject_options=self.sobject_options),
+            error_handler=SalesforceErrorHandler(
+                stream_name=self.stream_name,
+                sobject_options=self.sobject_options,
+                token_provider=self.sf_api._token_provider,
+            ),
         )
 
     def read_records(
@@ -681,7 +681,9 @@ class BulkSalesforceStream(SalesforceStream):
         url_base = self.sf_api.instance_url
         job_query_path = f"/services/data/{self.sf_api.version}/jobs/query"
         decoder = JsonDecoder(parameters=parameters)
-        token_provider = SalesforceTokenProvider(self.sf_api)
+        # Reuse the Salesforce client's shared provider so refresh timers
+        # stay coherent across REST describe traffic and Bulk job polling.
+        token_provider = self.sf_api._token_provider
         authenticator = BearerAuthenticator(
             token_provider=token_provider,
             config=config,
@@ -1084,17 +1086,38 @@ class BulkSalesforceSubStream(BatchedSubStream, BulkSalesforceStream):
         try:
             yield from self._bulk_job_stream.stream_slices(sync_mode=sync_mode, cursor_field=cursor_field, stream_state=stream_state)
         except BulkNotSupportedException:
-            # Mirror the REST fallback of the non-sub Bulk path so substreams
-            # (e.g. ContentDocumentLink) don't fail the sync when Bulk is
-            # unavailable.
+            # Mirror the REST fallback of the non-sub Bulk path: wire a REST
+            # substream counterpart so read_records sees a valid _rest_stream
+            # and the parent-batched request shape is preserved.
             self.logger.warning(
                 "attempt to switch to STANDARD(non-BULK) sync. Because the SalesForce BULK job has returned a failed status"
             )
-            yield from super(BulkSalesforceSubStream, self).stream_slices(
+            self._switch_from_bulk_to_rest = True
+            self._rest_stream = self.get_standard_instance()
+            yield from self._rest_stream.stream_slices(
                 sync_mode=sync_mode,
                 cursor_field=cursor_field,
                 stream_state=stream_state,
             )
+
+    def get_standard_instance(self) -> SalesforceStream:
+        """Substream-aware fallback: returns a RestSalesforceSubStream instead of
+        the base RestSalesforceStream so parent-batched slicing keeps working.
+        """
+        return RestSalesforceSubStream(
+            parent=self.parent,
+            sf_api=self.sf_api,
+            pk=self.pk,
+            stream_name=self.stream_name,
+            schema=self.schema,
+            sobject_options=self.sobject_options,
+            authenticator=self._http_client._session.auth,
+            job_tracker=self._job_tracker,
+            message_repository=self._message_repository,
+            tenant_id=self._tenant_id,
+            source_id=self._source_id,
+            custom_field_names=self._custom_field_names,
+        )
 
 
 @BulkSalesforceStream.transformer.registerCustomTransform
@@ -1264,8 +1287,19 @@ class BulkIncrementalSalesforceStream(BulkSalesforceStream, IncrementalRestSales
         next_page_token: Mapping[str, Any] = None,
     ) -> MutableMapping[str, Any]:
         stream_slice = stream_slice or {}
-        start_date = stream_slice.get("start_date") or (stream_state or {}).get(self.cursor_field)
-        end_date = stream_slice.get("end_date")
+
+        def _soql_dt(value: Any) -> str:
+            if not value:
+                return ""
+            try:
+                return pendulum.parse(str(value)).in_timezone("UTC").isoformat(timespec="milliseconds")
+            except (ParserError, ValueError):
+                return ""
+
+        start_date = _soql_dt(
+            stream_slice.get("start_date") or (stream_state or {}).get(self.cursor_field)
+        )
+        end_date = _soql_dt(stream_slice.get("end_date"))
 
         select_fields = self.get_query_select_fields()
         where_conditions = []

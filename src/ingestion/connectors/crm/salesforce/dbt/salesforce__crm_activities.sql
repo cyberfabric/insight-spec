@@ -66,7 +66,7 @@ events AS (
         parseDateTimeBestEffort(
             coalesce(toString(StartDateTime), toString(ActivityDate), toString(CreatedDate))
         )                                           AS timestamp,
-        toInt64OrNull(toString(DurationInMinutes)) * 60  AS duration_seconds,
+        toInt64OrNull(DurationInMinutes) * 60       AS duration_seconds,
         CAST(NULL AS Nullable(String))              AS outcome,
         toJSONString(map(
             'Subject',      coalesce(toString(Subject), ''),

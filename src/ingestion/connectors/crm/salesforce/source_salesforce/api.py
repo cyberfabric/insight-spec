@@ -140,11 +140,14 @@ class Salesforce:
         )
         self.session.mount("https://", adapter)
 
+        # Shared by describe-time HTTP traffic here and by streams below —
+        # keeps a single source of truth for proactive refresh timing.
+        self._token_provider = SalesforceTokenProvider(self)
         self._http_client = HttpClient(
             "sf_api",
             self.logger,
             session=self.session,
-            error_handler=SalesforceErrorHandler(),
+            error_handler=SalesforceErrorHandler(token_provider=self._token_provider),
         )
 
         # Cache of full describe() responses per sobject. Populated by
