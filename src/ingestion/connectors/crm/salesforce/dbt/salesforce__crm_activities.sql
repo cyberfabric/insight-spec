@@ -1,11 +1,18 @@
--- Bronze → Silver step 1: Salesforce Tasks + Events → crm_activities
--- UNION ALL with activity_type discriminator.
--- WhatId polymorphic resolution: 006=Opportunity→deal_id, 001=Account→account_id.
--- Duration: CallDurationInSeconds (tasks), DurationInMinutes*60 (events).
-{{ config(materialized='incremental', unique_key='activity_id', order_by=['activity_id'], schema='salesforce', tags=['silver:class_crm_activities']) }}
+{{ config(
+    materialized='incremental',
+    incremental_strategy='append',
+    schema='staging',
+    engine='ReplacingMergeTree(_version)',
+    order_by='(unique_key)',
+    settings={'allow_nullable_key': 1},
+    tags=['salesforce', 'silver:class_crm_activities']
+) }}
 
 WITH tasks AS (
     SELECT
+        tenant_id,
+        source_id,
+        unique_key,
         Id                                          AS activity_id,
         CASE
             WHEN CallType IS NOT NULL THEN 'call'
@@ -19,12 +26,12 @@ WITH tasks AS (
         CASE WHEN startsWith(coalesce(WhatId, ''), '001') THEN WhatId
              ELSE NULL END                          AS account_id,
         parseDateTimeBestEffort(
-            coalesce(ActivityDate, toString(CreatedDate))
+            coalesce(toString(ActivityDate), toString(CreatedDate))
         )                                           AS timestamp,
-        CASE WHEN CallType IS NOT NULL
+        CASE WHEN CallType IS NOT NULL AND CallDurationInSeconds IS NOT NULL
              THEN toInt64(CallDurationInSeconds)
              ELSE NULL END                          AS duration_seconds,
-        Status                                      AS outcome,
+        CAST(Status AS Nullable(String))            AS outcome,
         toJSONString(map(
             'Subject',     coalesce(toString(Subject), ''),
             'Priority',    coalesce(toString(Priority), ''),
@@ -32,20 +39,19 @@ WITH tasks AS (
             'CallType',    coalesce(toString(CallType), ''),
             'IsDeleted',   toString(coalesce(IsDeleted, false))
         ))                                          AS metadata,
-        parseDateTimeBestEffort(CreatedDate)         AS created_at,
+        custom_fields,
+        parseDateTimeBestEffort(CreatedDate)        AS created_at,
         data_source,
         toUnixTimestamp64Milli(
-            parseDateTimeBestEffort(SystemModstamp)
+            parseDateTime64BestEffort(SystemModstamp)
         )                                           AS _version
-    FROM {{ source('salesforce', 'tasks') }}
-    {% if is_incremental() %}
-    WHERE toUnixTimestamp64Milli(parseDateTimeBestEffort(SystemModstamp))
-          > (SELECT coalesce(max(_version), 0) FROM {{ this }})
-    {% endif %}
+    FROM {{ source('bronze_salesforce', 'Task') }}
 ),
-
 events AS (
     SELECT
+        tenant_id,
+        source_id,
+        unique_key,
         Id                                          AS activity_id,
         CASE
             WHEN EventSubtype IS NULL OR EventSubtype = 'Event' THEN 'event'
@@ -57,9 +63,11 @@ events AS (
              ELSE NULL END                          AS deal_id,
         CASE WHEN startsWith(coalesce(WhatId, ''), '001') THEN WhatId
              ELSE NULL END                          AS account_id,
-        parseDateTimeBestEffort(StartDateTime)       AS timestamp,
-        toInt64(DurationInMinutes) * 60             AS duration_seconds,
-        NULL                                        AS outcome,
+        parseDateTimeBestEffort(
+            coalesce(toString(StartDateTime), toString(ActivityDate), toString(CreatedDate))
+        )                                           AS timestamp,
+        toInt64OrNull(DurationInMinutes) * 60       AS duration_seconds,
+        CAST(NULL AS Nullable(String))              AS outcome,
         toJSONString(map(
             'Subject',      coalesce(toString(Subject), ''),
             'Location',     coalesce(toString(Location), ''),
@@ -67,48 +75,20 @@ events AS (
             'EventSubtype', coalesce(toString(EventSubtype), ''),
             'IsDeleted',    toString(coalesce(IsDeleted, false))
         ))                                          AS metadata,
-        parseDateTimeBestEffort(CreatedDate)         AS created_at,
+        custom_fields,
+        parseDateTimeBestEffort(CreatedDate)        AS created_at,
         data_source,
         toUnixTimestamp64Milli(
-            parseDateTimeBestEffort(SystemModstamp)
+            parseDateTime64BestEffort(SystemModstamp)
         )                                           AS _version
-    FROM {{ source('salesforce', 'events') }}
-    {% if is_incremental() %}
-    WHERE toUnixTimestamp64Milli(parseDateTimeBestEffort(SystemModstamp))
-          > (SELECT coalesce(max(_version), 0) FROM {{ this }})
-    {% endif %}
+    FROM {{ source('bronze_salesforce', 'Event') }}
+),
+combined AS (
+    SELECT * FROM tasks
+    UNION ALL
+    SELECT * FROM events
 )
-
-SELECT
-    activity_id,
-    activity_type,
-    owner_id,
-    contact_id,
-    deal_id,
-    account_id,
-    timestamp,
-    duration_seconds,
-    outcome,
-    metadata,
-    created_at,
-    data_source,
-    _version
-FROM tasks
-
-UNION ALL
-
-SELECT
-    activity_id,
-    activity_type,
-    owner_id,
-    contact_id,
-    deal_id,
-    account_id,
-    timestamp,
-    duration_seconds,
-    outcome,
-    metadata,
-    created_at,
-    data_source,
-    _version
-FROM events
+SELECT * FROM combined
+{% if is_incremental() %}
+WHERE _version > coalesce((SELECT max(_version) FROM {{ this }}), 0)
+{% endif %}

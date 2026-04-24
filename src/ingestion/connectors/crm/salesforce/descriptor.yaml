@@ -1,0 +1,9 @@
+name: salesforce
+version: "2.0.0"
+type: cdk
+schedule: "0 5 * * *"
+workflow: sync
+dbt_select: "tag:salesforce+"
+
+connection:
+  namespace: "bronze_salesforce"
