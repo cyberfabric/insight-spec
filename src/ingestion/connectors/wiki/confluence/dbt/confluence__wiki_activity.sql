@@ -70,12 +70,12 @@ agg AS (
 SELECT
     a.tenant_id,
     a.source_id,
-    concat(
+    CAST(concat(
         coalesce(a.tenant_id, ''), '-',
         coalesce(a.source_id, ''), '-',
         a.author_id, '-',
         toString(a.day)
-    )                                                                       AS unique_key,
+    ) AS String)                                                            AS unique_key,
     a.author_id,
     {% if jira_user %}u.email{% else %}CAST(NULL AS Nullable(String)){% endif %}                                                     AS author_email,
     a.day,
